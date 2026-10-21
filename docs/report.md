@@ -3,7 +3,7 @@
 This workspace now contains an installable `src/geneticevo` package, runnable
 examples, meaningful tests, bounded benchmarks, and extension documentation.
 Nothing was published, deployed, or pushed to a remote repository.
-The current local package is alpha `0.1.0a1`, licensed under MIT. Current release
+The current local package is alpha `0.1.0a2`, licensed under MIT. Current release
 metadata, installation, example, and GPU-validation status are recorded in
 [release.md](release.md); the timings below retain their historical build context.
 

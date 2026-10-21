@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geneticevo"
-version = "0.1.0a2"
+version = "0.1.0a3"
 description = "Reproducible evolutionary experiments with optional independent lifetime learning"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,6 +20,13 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = ["numpy>=1.26,<3", "gymnasium>=1.2,<1.3"]
+
+[project.urls]
+Homepage = "https://github.com/JonathanBaj/geneticevo"
+Documentation = "https://github.com/JonathanBaj/geneticevo/blob/main/README.md"
+Repository = "https://github.com/JonathanBaj/geneticevo"
+Issues = "https://github.com/JonathanBaj/geneticevo/issues"
+Changelog = "https://github.com/JonathanBaj/geneticevo/releases"
 
 [project.optional-dependencies]
 torch = ["torch>=2.12,<2.13"]

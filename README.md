@@ -1,6 +1,6 @@
 # geneticevo
 
-**Alpha preview: 0.1.0a1.** APIs and checkpoint compatibility may change.
+**Alpha preview.** APIs and checkpoint compatibility may change.
 
 A Python library for reproducible evolutionary experiments, with optional
 lifetime learning and population tensor execution. Supply a problem and an agent
@@ -9,7 +9,12 @@ metrics, archives, and checkpoints.
 
 Pure evolution requires only NumPy and Gymnasium. PyTorch, Stable-Baselines3
 (SB3), PettingZoo, and plotting are optional. The package and Python import name
-are `geneticevo`. This project has not been published or deployed.
+are `geneticevo`. Install published releases from [PyPI](https://pypi.org/project/geneticevo/).
+
+[Documentation](https://github.com/JonathanBaj/geneticevo/blob/main/README.md) |
+[Source code](https://github.com/JonathanBaj/geneticevo) |
+[Issue tracker](https://github.com/JonathanBaj/geneticevo/issues) |
+[Releases](https://github.com/JonathanBaj/geneticevo/releases)
 
 Evolution, learning, communication, and GPU execution do not guarantee better
 results or general intelligence. These are research tools, not deployment safety
@@ -17,26 +22,41 @@ guarantees.
 
 ## Installation
 
-Python 3.10+ is declared; Python 3.11.9 was tested on Windows. From this directory:
+Install from PyPI:
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -e .
-# Choose the extras you need:
-python -m pip install -e ".[sb3]"       # PPO and DQN; includes PyTorch
-python -m pip install -e ".[torch]"     # Native population tensors and PPO
-python -m pip install -e ".[shared]"    # Official PettingZoo integration
-python -m pip install -e ".[plot]"      # Saved plots
-python -m pip install -e ".[dev,release]" # Test/build/metadata validation tools
+```sh
+pip install geneticevo
 ```
 
-On Linux/macOS, activate with `source .venv/bin/activate`. Source installation is
-the verified installation path; the project has not been uploaded to PyPI.
-To install the locally built alpha wheel, use:
+To upgrade to the latest alpha release:
 
-```powershell
-python -m pip install "dist/geneticevo-0.1.0a1-py3-none-any.whl"
+```sh
+python -m pip install --upgrade --pre geneticevo
+```
+
+Choose optional features as needed:
+
+```sh
+python -m pip install "geneticevo[sb3]"    # PPO and DQN; includes PyTorch
+python -m pip install "geneticevo[torch]"  # Native population tensors and PPO
+python -m pip install "geneticevo[shared]" # Official PettingZoo integration
+python -m pip install "geneticevo[plot]"   # Saved plots
+```
+
+Python 3.10+ is declared; Python 3.11.9 was tested on Windows. A virtual
+environment is recommended. For source development, clone the repository:
+
+```sh
+git clone https://github.com/JonathanBaj/geneticevo.git
+cd geneticevo
+python -m venv .venv
+```
+
+Activate it with `.\.venv\Scripts\Activate.ps1` on Windows PowerShell or
+`source .venv/bin/activate` on Linux/macOS, then install development tools:
+
+```sh
+python -m pip install -e ".[dev,release]"
 ```
 
 Core evolution does not install PyTorch, SB3, PettingZoo, or Matplotlib. Optional
@@ -50,11 +70,10 @@ been exercised here; the minimum declared Python version is not a tested matrix.
   unnecessary for vector optimization and NumPy neural evolution.
 - Native tensor inference/PPO requires the `torch` extra and works on CPU.
   SB3 learning requires the `sb3` extra and also works on CPU.
-- CUDA execution is **experimental and hardware-unverified** in this release.
-  It requires an NVIDIA GPU, a compatible driver, and a compatible CUDA-enabled
-  PyTorch build. Install the appropriate PyTorch build before requesting CUDA.
-  The CUDA version string on an installed PyTorch build does not establish that
-  a usable GPU exists.
+- The CUDA backend supports batched MLP inference, native PPO, and compatible
+  tensor environments. It requires an NVIDIA GPU, a compatible driver, and a
+  CUDA-enabled PyTorch build. Follow the [official PyTorch installation selector](https://pytorch.org/get-started/locally/)
+  before requesting CUDA; a CPU-only PyTorch build cannot use the GPU.
 - Python environments keep running on the CPU. GPU policies with Python
   environments are hybrid execution; native tensor simulation requires a
   compatible tensor environment. There is no general GPU speedup claim.
@@ -73,7 +92,9 @@ Declared ranges and tested versions:
 | Matplotlib (optional) | >=3.10,<3.11 | 3.10.6 |
 
 Only the listed versions were exercised; the entire allowed ranges were not
-tested. CUDA hardware was unavailable. See [validation](docs/validation.md).
+tested. The tensor backend and native PPO were validated on CPU. CUDA hardware
+execution and performance have not been validated in this environment; the CUDA
+test is skipped when no usable GPU is available. See [validation](https://github.com/JonathanBaj/geneticevo/blob/main/docs/validation.md).
 
 ## Complete quickstart
 
@@ -129,8 +150,15 @@ python examples/shared_world.py
 python examples/shared_world.py --rl
 ```
 
-For CUDA, use `python examples/native_ppo.py --device cuda`. This path is
-implemented but hardware validation and performance are outstanding.
+Run native PPO on a CUDA device from the source checkout:
+
+```sh
+python -c "import torch; assert torch.cuda.is_available(), 'No usable CUDA device found'"
+python examples/native_ppo.py --device cuda
+```
+
+The example sets both policy and tensor-environment devices to CUDA. An ordinary
+Python environment remains on the CPU when paired with a CUDA policy.
 
 ## Configuration and lifecycle
 
@@ -306,25 +334,24 @@ prevents memorization or invalid experimental design.
 python -m unittest discover -s tests -v
 python -m pytest -q
 python -m build --wheel --no-isolation
-python -m twine check --strict dist/geneticevo-0.1.0a1*
+python -m twine check --strict dist/*
 python benchmarks/equal_work.py --repeats 3
 python benchmarks/baselines.py --seeds 1 2 3
 ```
 
 Windows sandbox restrictions may prevent spawned worker pipes; use an ordinary
-local terminal for process tests. [Architecture and extensions](docs/architecture.md)
-explain custom genomes/environments/learners. [Validation](docs/validation.md)
-documents correctness checks and benchmark methodology. [Delivery report](docs/report.md)
+local terminal for process tests. [Architecture and extensions](https://github.com/JonathanBaj/geneticevo/blob/main/docs/architecture.md)
+explain custom genomes/environments/learners. [Validation](https://github.com/JonathanBaj/geneticevo/blob/main/docs/validation.md)
+documents correctness checks and benchmark methodology. [Delivery report](https://github.com/JonathanBaj/geneticevo/blob/main/docs/report.md)
 records measured results and remaining limitations.
-The [alpha release checklist](docs/release.md) records packaging checks and the
-boundary between CPU validation and unverified CUDA execution.
+The [alpha release checklist](https://github.com/JonathanBaj/geneticevo/blob/main/docs/release.md) records packaging checks and the
+current release checks and hardware validation status.
 
 For a saved plot: `from geneticevo.plotting import plot_history`, then call
 `plot_history("results/neural/metrics.jsonl", "results/neural/fitness.png")`.
 
 ## License
 
-geneticevo is licensed under the [MIT License](LICENSE). Copyright notices and
+geneticevo is licensed under the [MIT License](https://github.com/JonathanBaj/geneticevo/blob/main/LICENSE). Copyright notices and
 the license text ship with the source distribution and wheel. Dependencies
 retain their own licenses.
-
