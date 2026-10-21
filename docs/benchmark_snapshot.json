@@ -1,0 +1,460 @@
+{
+  "date": "2026-10-20",
+  "metadata": {
+    "versions": {
+      "geneticevo": "0.1.0",
+      "numpy": "2.4.4",
+      "gymnasium": "1.2.3",
+      "torch": "2.12.1+cu126",
+      "stable-baselines3": "2.9.0",
+      "pettingzoo": "1.25.0"
+    },
+    "python": "3.11.9",
+    "platform": "Windows-10-10.0.26300-SP0",
+    "processor": "AMD64 Family 25 Model 117 Stepping 2, AuthenticAMD",
+    "logical_cpus": 16
+  },
+  "warmup_seconds": 0.04263370006810874,
+  "equal_work": [
+    {
+      "population": 4,
+      "env_copies": 1,
+      "mode": "serial_cpu",
+      "median_complete_seconds": 0.1298357000341639,
+      "interactions": 704,
+      "repeats": 3
+    },
+    {
+      "population": 4,
+      "env_copies": 1,
+      "mode": "parallel_cpu",
+      "median_complete_seconds": 1.4478207000065595,
+      "interactions": 704,
+      "repeats": 3
+    },
+    {
+      "population": 4,
+      "env_copies": 1,
+      "mode": "batched_python_cpu",
+      "median_complete_seconds": 0.14903710002545267,
+      "interactions": 704,
+      "repeats": 3
+    },
+    {
+      "population": 4,
+      "env_copies": 1,
+      "mode": "batched_native_cpu",
+      "median_complete_seconds": 0.16322510002646595,
+      "interactions": 704,
+      "repeats": 3
+    },
+    {
+      "population": 4,
+      "env_copies": 4,
+      "mode": "serial_cpu",
+      "median_complete_seconds": 0.12475700001232326,
+      "interactions": 704,
+      "repeats": 3
+    },
+    {
+      "population": 4,
+      "env_copies": 4,
+      "mode": "parallel_cpu",
+      "median_complete_seconds": 1.4157166000222787,
+      "interactions": 704,
+      "repeats": 3
+    },
+    {
+      "population": 4,
+      "env_copies": 4,
+      "mode": "batched_python_cpu",
+      "median_complete_seconds": 0.09165670000948012,
+      "interactions": 704,
+      "repeats": 3
+    },
+    {
+      "population": 4,
+      "env_copies": 4,
+      "mode": "batched_native_cpu",
+      "median_complete_seconds": 0.0947736999951303,
+      "interactions": 704,
+      "repeats": 3
+    },
+    {
+      "population": 16,
+      "env_copies": 1,
+      "mode": "serial_cpu",
+      "median_complete_seconds": 0.3134338000090793,
+      "interactions": 2240,
+      "repeats": 3
+    },
+    {
+      "population": 16,
+      "env_copies": 1,
+      "mode": "parallel_cpu",
+      "median_complete_seconds": 1.5124569999752566,
+      "interactions": 2240,
+      "repeats": 3
+    },
+    {
+      "population": 16,
+      "env_copies": 1,
+      "mode": "batched_python_cpu",
+      "median_complete_seconds": 0.20812710002064705,
+      "interactions": 2240,
+      "repeats": 3
+    },
+    {
+      "population": 16,
+      "env_copies": 1,
+      "mode": "batched_native_cpu",
+      "median_complete_seconds": 0.18968229996971786,
+      "interactions": 2240,
+      "repeats": 3
+    },
+    {
+      "population": 16,
+      "env_copies": 4,
+      "mode": "serial_cpu",
+      "median_complete_seconds": 0.31325040000956506,
+      "interactions": 2240,
+      "repeats": 3
+    },
+    {
+      "population": 16,
+      "env_copies": 4,
+      "mode": "parallel_cpu",
+      "median_complete_seconds": 1.5317977999802679,
+      "interactions": 2240,
+      "repeats": 3
+    },
+    {
+      "population": 16,
+      "env_copies": 4,
+      "mode": "batched_python_cpu",
+      "median_complete_seconds": 0.15631439990829676,
+      "interactions": 2240,
+      "repeats": 3
+    },
+    {
+      "population": 16,
+      "env_copies": 4,
+      "mode": "batched_native_cpu",
+      "median_complete_seconds": 0.12644829996861517,
+      "interactions": 2240,
+      "repeats": 3
+    }
+  ],
+  "ppo": {
+    "records": [
+      {
+        "mode": "independent",
+        "population": 4,
+        "env_copies": 1,
+        "rollout_and_update_seconds": 0.38461609999649227,
+        "training_interactions": 256,
+        "optimizer_updates_all_individuals": 32,
+        "frozen_evaluation_interactions": 128,
+        "mean_test_fitness": -1.9973514163430082
+      },
+      {
+        "mode": "batched",
+        "population": 4,
+        "env_copies": 1,
+        "rollout_and_update_seconds": 0.08869360003154725,
+        "training_interactions": 256,
+        "optimizer_updates_all_individuals": 32,
+        "frozen_evaluation_interactions": 128,
+        "mean_test_fitness": -3.7506996298470767
+      },
+      {
+        "mode": "independent",
+        "population": 4,
+        "env_copies": 4,
+        "rollout_and_update_seconds": 0.20757420000154525,
+        "training_interactions": 256,
+        "optimizer_updates_all_individuals": 32,
+        "frozen_evaluation_interactions": 128,
+        "mean_test_fitness": -0.032401849413872696
+      },
+      {
+        "mode": "batched",
+        "population": 4,
+        "env_copies": 4,
+        "rollout_and_update_seconds": 0.06623549992218614,
+        "training_interactions": 256,
+        "optimizer_updates_all_individuals": 32,
+        "frozen_evaluation_interactions": 128,
+        "mean_test_fitness": -1.9939097962342203
+      },
+      {
+        "mode": "independent",
+        "population": 16,
+        "env_copies": 1,
+        "rollout_and_update_seconds": 1.398045500041917,
+        "training_interactions": 1024,
+        "optimizer_updates_all_individuals": 128,
+        "frozen_evaluation_interactions": 512,
+        "mean_test_fitness": -4.568237306299125
+      },
+      {
+        "mode": "batched",
+        "population": 16,
+        "env_copies": 1,
+        "rollout_and_update_seconds": 0.12879810004960746,
+        "training_interactions": 1024,
+        "optimizer_updates_all_individuals": 128,
+        "frozen_evaluation_interactions": 512,
+        "mean_test_fitness": -5.500964971761277
+      },
+      {
+        "mode": "independent",
+        "population": 16,
+        "env_copies": 4,
+        "rollout_and_update_seconds": 0.8017942999722436,
+        "training_interactions": 1024,
+        "optimizer_updates_all_individuals": 128,
+        "frozen_evaluation_interactions": 512,
+        "mean_test_fitness": -4.373101586403209
+      },
+      {
+        "mode": "batched",
+        "population": 16,
+        "env_copies": 4,
+        "rollout_and_update_seconds": 0.0760341000277549,
+        "training_interactions": 1024,
+        "optimizer_updates_all_individuals": 128,
+        "frozen_evaluation_interactions": 512,
+        "mean_test_fitness": -5.738704484356276
+      }
+    ],
+    "metadata": {
+      "versions": {
+        "geneticevo": "0.1.0",
+        "numpy": "2.4.4",
+        "gymnasium": "1.2.3",
+        "torch": "2.12.1+cu126",
+        "stable-baselines3": "2.9.0",
+        "pettingzoo": "1.25.0"
+      },
+      "python": "3.11.9",
+      "platform": "Windows-10-10.0.26300-SP0",
+      "processor": "AMD64 Family 25 Model 117 Stepping 2, AuthenticAMD",
+      "logical_cpus": 16
+    },
+    "notes": "Identical architectures, initial genes, budgets and schedules; stochastic training scenarios/action streams differ between routes. Frozen test suite is common. One timing per configuration; no superiority claim. CPU only."
+  },
+  "baselines": {
+    "records": [
+      {
+        "mode": "random",
+        "seed": 1,
+        "test_fitness": -15.345636721907795,
+        "training_interactions": 0,
+        "evaluation_interactions": 256,
+        "wall_seconds": 0.007093499996699393
+      },
+      {
+        "mode": "evolution",
+        "seed": 1,
+        "test_fitness": -0.7582671324489638,
+        "training_interactions": 0,
+        "evaluation_interactions": 1344,
+        "wall_seconds": 0.22693270002491772
+      },
+      {
+        "mode": "rl_only",
+        "seed": 1,
+        "test_fitness": -0.7859283768339083,
+        "training_interactions": 512,
+        "evaluation_interactions": 576,
+        "wall_seconds": 4.0121691999956965
+      },
+      {
+        "mode": "evolution_rl",
+        "seed": 1,
+        "test_fitness": -1.0797863324114587,
+        "training_interactions": 512,
+        "evaluation_interactions": 1344,
+        "wall_seconds": 1.4491366998990998
+      },
+      {
+        "mode": "no_communication",
+        "seed": 1,
+        "test_fitness": 2.25,
+        "training_interactions": 0,
+        "evaluation_interactions": 128,
+        "world_steps": 64,
+        "wall_seconds": 0.0035747999791055918
+      },
+      {
+        "mode": "communication",
+        "seed": 1,
+        "test_fitness": 3.5625,
+        "training_interactions": 0,
+        "evaluation_interactions": 128,
+        "world_steps": 64,
+        "wall_seconds": 0.006575700012035668
+      },
+      {
+        "mode": "random",
+        "seed": 2,
+        "test_fitness": -12.772338029295497,
+        "training_interactions": 0,
+        "evaluation_interactions": 256,
+        "wall_seconds": 0.004616399994120002
+      },
+      {
+        "mode": "evolution",
+        "seed": 2,
+        "test_fitness": -0.7582671324489638,
+        "training_interactions": 0,
+        "evaluation_interactions": 1344,
+        "wall_seconds": 0.1506404000101611
+      },
+      {
+        "mode": "rl_only",
+        "seed": 2,
+        "test_fitness": -2.320816130260937,
+        "training_interactions": 512,
+        "evaluation_interactions": 576,
+        "wall_seconds": 0.8914778999751434
+      },
+      {
+        "mode": "evolution_rl",
+        "seed": 2,
+        "test_fitness": -0.7672655078349635,
+        "training_interactions": 512,
+        "evaluation_interactions": 1344,
+        "wall_seconds": 1.4351060999324545
+      },
+      {
+        "mode": "no_communication",
+        "seed": 2,
+        "test_fitness": 1.75,
+        "training_interactions": 0,
+        "evaluation_interactions": 128,
+        "world_steps": 64,
+        "wall_seconds": 0.005161499953828752
+      },
+      {
+        "mode": "communication",
+        "seed": 2,
+        "test_fitness": 3.4375,
+        "training_interactions": 0,
+        "evaluation_interactions": 128,
+        "world_steps": 64,
+        "wall_seconds": 0.007158999913372099
+      },
+      {
+        "mode": "random",
+        "seed": 3,
+        "test_fitness": -16.095876772154952,
+        "training_interactions": 0,
+        "evaluation_interactions": 256,
+        "wall_seconds": 0.0043762000277638435
+      },
+      {
+        "mode": "evolution",
+        "seed": 3,
+        "test_fitness": -9.288702061254298,
+        "training_interactions": 0,
+        "evaluation_interactions": 1344,
+        "wall_seconds": 0.16574109997600317
+      },
+      {
+        "mode": "rl_only",
+        "seed": 3,
+        "test_fitness": -0.8124398521322291,
+        "training_interactions": 512,
+        "evaluation_interactions": 576,
+        "wall_seconds": 0.8678486000280827
+      },
+      {
+        "mode": "evolution_rl",
+        "seed": 3,
+        "test_fitness": -0.837186083139386,
+        "training_interactions": 512,
+        "evaluation_interactions": 1344,
+        "wall_seconds": 1.3922701000701636
+      },
+      {
+        "mode": "no_communication",
+        "seed": 3,
+        "test_fitness": 2.25,
+        "training_interactions": 0,
+        "evaluation_interactions": 128,
+        "world_steps": 64,
+        "wall_seconds": 0.003041599993593991
+      },
+      {
+        "mode": "communication",
+        "seed": 3,
+        "test_fitness": 3.5625,
+        "training_interactions": 0,
+        "evaluation_interactions": 128,
+        "world_steps": 64,
+        "wall_seconds": 0.006172499968670309
+      }
+    ],
+    "summaries": {
+      "rl_only": {
+        "runs": 3,
+        "mean": -1.3063947864090248,
+        "std": 0.8786146548557923,
+        "normal_95_interval": [
+          -2.300640865099111,
+          -0.3121487077189389
+        ]
+      },
+      "no_communication": {
+        "runs": 3,
+        "mean": 2.0833333333333335,
+        "std": 0.2886751345948129,
+        "normal_95_interval": [
+          1.7566666666666668,
+          2.41
+        ]
+      },
+      "random": {
+        "runs": 3,
+        "mean": -14.737950507786081,
+        "std": 1.743111971431307,
+        "normal_95_interval": [
+          -16.71046739301579,
+          -12.765433622556374
+        ]
+      },
+      "evolution": {
+        "runs": 3,
+        "mean": -3.601745442050742,
+        "std": 4.925048902450346,
+        "normal_95_interval": [
+          -9.174962928870228,
+          1.9714720447687437
+        ]
+      },
+      "communication": {
+        "runs": 3,
+        "mean": 3.5208333333333335,
+        "std": 0.07216878364870323,
+        "normal_95_interval": [
+          3.439166666666667,
+          3.6025
+        ]
+      },
+      "evolution_rl": {
+        "runs": 3,
+        "mean": -0.894745974461936,
+        "std": 0.16401881680249664,
+        "normal_95_interval": [
+          -1.0803507382067834,
+          -0.7091412107170888
+        ]
+      }
+    },
+    "notes": "RL-only and evolution+RL match lifetime-learning interactions; their evaluation budgets differ and are reported. Evolution-only uses no RL interactions. Random and communication ablations are frozen controls. Small smoke runs cannot establish superiority."
+  },
+  "limitations": "Timing includes initialization, archive reevaluation and result copies; imports/warmup excluded. RSS is parent RSS after run, not peak or child-process memory. Hybrid transfer time is not separately instrumented. No compilation or mixed precision.",
+  "execution_note": "Final measurement scripts ran sequentially after tests completed."
+}
