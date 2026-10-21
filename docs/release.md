@@ -90,3 +90,29 @@ Validated locally on 2026-10-20:
 Historical timings in `benchmark_snapshot.json` retain the pre-alpha build
 version they were measured with; packaging edits do not constitute new
 performance evidence.
+
+## GitHub release workflow
+
+`.github/workflows/release.yml` runs on `release: published`, which includes
+published prereleases. It checks out the event's tagged commit SHA, checks the
+release tag against both package-version declarations, installs the full CPU
+integration test dependencies, runs pytest, then builds and strictly checks
+exactly one wheel and one source distribution. Accepted tag forms are the exact
+version or that version prefixed by `v`, such as `v0.1.0a1`.
+
+The build job uploads `python-distributions`. A separate `publish` job downloads
+that same artifact and uses `pypa/gh-action-pypi-publish@release/v1`. Only that job
+has `id-token: write`, and it uses the GitHub environment named `pypi`. No PyPI
+API token or secret is referenced.
+
+Before publishing a release, the PyPI Trusted Publisher must identify the correct
+repository owner/name, workflow filename **release.yml**, and environment
+**pypi**. Configure the GitHub `pypi` environment as appropriate for the project.
+Commit and push the workflow before tagging the release; the tagged commit must
+contain it. Publishing a new GitHub release or prerelease starts the workflow.
+
+The workflow targets GitHub-hosted Ubuntu and Python 3.11. It exercises native
+PPO on CPU; its conditional CUDA test is skipped on these runners. Local static
+workflow validation does not prove GitHub/PyPI identity configuration or perform
+an upload. See [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/using-a-publisher/)
+and [GitHub release events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#release).
