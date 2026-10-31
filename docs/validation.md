@@ -29,6 +29,15 @@ independent `nn.Sequential`, `torch.distributions.Categorical`, and
 PyTorch's transformed distribution. Resume includes older elites alongside fresh
 children, with independent optimizer counters.
 
+The hardware-only `tests/test_cuda.py` additionally compares CUDA inference,
+likelihoods, PPO gradients, clipping, and Adam against CPU results; checks masked
+tensor transitions, bootstrap targets, independent CUDA generators and gradients;
+and checks frozen native/hybrid evaluation with heterogeneous widths. It runs
+checkpoint/resume across discrete/continuous actions, native/hybrid environments,
+fixed/growing networks, and both inheritance modes. SB3 CUDA PPO/DQN tests cover
+training, caller RNG isolation, fresh children, resumed state, and CPU-portable
+agent saves. These cases skip cleanly without CUDA; see [hardware results](cuda_validation.md).
+
 Shared-world tests cover routing, sender identity, one-step message timing,
 reset clearing, communication cost, recipient masks, inactive agents, task/team
 reward selection, role/partner rotation, held-out fixed partner pools, evolved
@@ -42,6 +51,7 @@ partners. PettingZoo's own `parallel_api_test` validates the bundled real
 python -m pytest -q
 python benchmarks/equal_work.py --repeats 3
 python benchmarks/ppo_updates.py
+python benchmarks/ppo_updates.py --device cuda
 python benchmarks/baselines.py --seeds 1 2 3
 ```
 
@@ -60,8 +70,10 @@ archive evaluation, and result copies. Python imports and warm-up are excluded.
 Per-component timings are retained. Process workers are started each generation;
 this intentionally exposes startup costs in these small runs. Parent RSS is
 sampled after the run, not as a peak and not including child RSS. Host peak memory,
-transfer-only timing, compilation, profiler traces, and CUDA measurements remain
-unverified. Missing measurements are explicitly labeled rather than inferred.
+transfer-only timing, compilation, and profiler traces remain unverified.
+CUDA complete-run timing and peak allocated device memory were measured on
+2026-10-30; see [CUDA validation](cuda_validation.md). Missing measurements are
+explicitly labeled rather than inferred.
 
 `ppo_updates.py` compares independent and batched native PPO with equal actual
 transitions and optimizer-update counts. It reports rollout+update time and

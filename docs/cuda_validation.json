@@ -1,0 +1,591 @@
+{
+  "hardware": {
+    "validation_date": "2026-10-30",
+    "python": "3.11.9",
+    "platform": "Windows-10-10.0.26300-SP0",
+    "torch": "2.12.1+cu126",
+    "torch_cuda_build": "12.6",
+    "cuda_available": true,
+    "device_count": 1,
+    "gpu_name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "gpu_total_memory_bytes": 8585216000,
+    "compute_capability": [
+      8,
+      9
+    ],
+    "nvidia_smi_query": "NVIDIA GeForce RTX 4060 Laptop GPU, 555.97, 8188 MiB",
+    "source_version": "0.1.0a3",
+    "installed_distribution_version": "0.1.0a2",
+    "git_head": "b179542ceff26500c71bb91e7ffeb7a27db39a8b",
+    "source_context": "Working tree includes the uncommitted optional neural-growth feature and added CUDA validation tests."
+  },
+  "full_tests": {
+    "passed": 61,
+    "subtests_passed": 21,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0,
+    "seconds": 32.267,
+    "junit_test_count_including_subtests": 82,
+    "warning": "SB3 warns that MLP PPO can be slower on GPU than CPU; training passed."
+  },
+  "examples": [
+    {
+      "arguments": [
+        "examples/native_ppo.py",
+        "--device",
+        "cuda"
+      ],
+      "returncode": 0,
+      "stdout": "Native PPO fitness=-1.6845; interactions=512\n"
+    },
+    {
+      "arguments": [
+        "examples/native_ppo.py",
+        "--device",
+        "cuda",
+        "--continuous"
+      ],
+      "returncode": 0,
+      "stdout": "Native PPO fitness=-16.3638; interactions=512\n"
+    },
+    {
+      "arguments": [
+        "examples/neural_growth.py",
+        "--device",
+        "cuda"
+      ],
+      "returncode": 0,
+      "stdout": "Generation 0: hidden sizes=[[8, 4], [6, 6], [6, 6], [8, 4]], mean growth events=2.00\nGeneration 1: hidden sizes=[[10, 6], [8, 8], [10, 6], [12, 4]], mean growth events=2.00\nGeneration 2: hidden sizes=[[10, 10], [8, 14], [12, 8], [12, 7]], mean growth events=2.00\nChampion hidden sizes=(8, 14); fitness=-113.4853\n"
+    },
+    {
+      "arguments": [
+        "examples/neural_growth.py",
+        "--device",
+        "cuda",
+        "--inheritance",
+        "baldwinian"
+      ],
+      "returncode": 0,
+      "stdout": "Generation 0: hidden sizes=[[8, 4], [6, 6], [6, 6], [8, 4]], mean growth events=2.00\nGeneration 1: hidden sizes=[[10, 6], [8, 8], [10, 6], [12, 4]], mean growth events=2.00\nGeneration 2: hidden sizes=[[10, 10], [8, 14], [12, 8], [12, 7]], mean growth events=2.00\nChampion hidden sizes=(10, 10); fitness=-221.3032\n"
+    },
+    {
+      "arguments": [
+        "examples/neural_growth.py",
+        "--device",
+        "cuda",
+        "--continuous"
+      ],
+      "returncode": 0,
+      "stdout": "Generation 0: hidden sizes=[[8, 4], [6, 6], [6, 6], [8, 4]], mean growth events=2.00\nGeneration 1: hidden sizes=[[8, 8], [10, 6], [9, 8], [12, 6]], mean growth events=2.00\nGeneration 2: hidden sizes=[[8, 12], [12, 10], [10, 10], [10, 11]], mean growth events=2.00\nChampion hidden sizes=(10, 10); fitness=-12.9375\n"
+    },
+    {
+      "arguments": [
+        "examples/neural_growth.py",
+        "--device",
+        "cuda",
+        "--continuous",
+        "--inheritance",
+        "baldwinian"
+      ],
+      "returncode": 0,
+      "stdout": "Generation 0: hidden sizes=[[8, 4], [6, 6], [6, 6], [8, 4]], mean growth events=2.00\nGeneration 1: hidden sizes=[[8, 8], [10, 6], [9, 8], [12, 6]], mean growth events=2.00\nGeneration 2: hidden sizes=[[8, 12], [9, 12], [10, 10], [10, 11]], mean growth events=2.00\nChampion hidden sizes=(10, 10); fitness=-13.1558\n"
+    },
+    {
+      "arguments": [
+        "examples/neural_growth.py",
+        "--device",
+        "cuda",
+        "--continuous",
+        "--inheritance",
+        "baldwinian",
+        "--value-loss-threshold",
+        "0.5"
+      ],
+      "returncode": 0,
+      "stdout": "Generation 0: hidden sizes=[[8, 4], [6, 6], [6, 6], [6, 4]], mean growth events=1.75\nGeneration 1: hidden sizes=[[8, 8], [10, 6], [9, 8], [12, 6]], mean growth events=2.00\nGeneration 2: hidden sizes=[[8, 8], [9, 8], [10, 10], [10, 9]], mean growth events=0.75\nChampion hidden sizes=(10, 10); fitness=-13.1558\n"
+    }
+  ],
+  "equal_work": {
+    "run_count": 72,
+    "matched_groups": 12,
+    "matching_work_and_fitness_verified": true,
+    "summary": [
+      {
+        "population": 4,
+        "env_copies": 1,
+        "mode": "batched_native_cpu",
+        "repeats": 3,
+        "median_seconds": 0.11925389990210533,
+        "min_seconds": 0.11449609999544919,
+        "max_seconds": 0.16865579993464053,
+        "interactions": 704,
+        "max_cuda_peak_allocated_bytes": null
+      },
+      {
+        "population": 4,
+        "env_copies": 1,
+        "mode": "batched_native_cuda",
+        "repeats": 3,
+        "median_seconds": 0.4177951000165194,
+        "min_seconds": 0.3591091998387128,
+        "max_seconds": 0.46110280021093786,
+        "interactions": 704,
+        "max_cuda_peak_allocated_bytes": 8543744
+      },
+      {
+        "population": 4,
+        "env_copies": 1,
+        "mode": "batched_python_cpu",
+        "repeats": 3,
+        "median_seconds": 0.11988469981588423,
+        "min_seconds": 0.11836550012230873,
+        "max_seconds": 0.1347834998741746,
+        "interactions": 704,
+        "max_cuda_peak_allocated_bytes": null
+      },
+      {
+        "population": 4,
+        "env_copies": 1,
+        "mode": "hybrid_cuda",
+        "repeats": 3,
+        "median_seconds": 0.34419200010597706,
+        "min_seconds": 0.342649299884215,
+        "max_seconds": 0.45603050012141466,
+        "interactions": 704,
+        "max_cuda_peak_allocated_bytes": 8542720
+      },
+      {
+        "population": 4,
+        "env_copies": 1,
+        "mode": "parallel_cpu",
+        "repeats": 3,
+        "median_seconds": 1.4613628000952303,
+        "min_seconds": 1.4481047000735998,
+        "max_seconds": 1.5155831999145448,
+        "interactions": 704,
+        "max_cuda_peak_allocated_bytes": null
+      },
+      {
+        "population": 4,
+        "env_copies": 1,
+        "mode": "serial_cpu",
+        "repeats": 3,
+        "median_seconds": 0.09084369987249374,
+        "min_seconds": 0.0845989000517875,
+        "max_seconds": 0.13820899999700487,
+        "interactions": 704,
+        "max_cuda_peak_allocated_bytes": null
+      },
+      {
+        "population": 4,
+        "env_copies": 4,
+        "mode": "batched_native_cpu",
+        "repeats": 3,
+        "median_seconds": 0.07525100000202656,
+        "min_seconds": 0.07364850002340972,
+        "max_seconds": 0.07655390002764761,
+        "interactions": 704,
+        "max_cuda_peak_allocated_bytes": null
+      },
+      {
+        "population": 4,
+        "env_copies": 4,
+        "mode": "batched_native_cuda",
+        "repeats": 3,
+        "median_seconds": 0.13156839995644987,
+        "min_seconds": 0.1294239000417292,
+        "max_seconds": 0.13512669992633164,
+        "interactions": 704,
+        "max_cuda_peak_allocated_bytes": 8545280
+      },
+      {
+        "population": 4,
+        "env_copies": 4,
+        "mode": "batched_python_cpu",
+        "repeats": 3,
+        "median_seconds": 0.07509709987789392,
+        "min_seconds": 0.07373720011673868,
+        "max_seconds": 0.09006650000810623,
+        "interactions": 704,
+        "max_cuda_peak_allocated_bytes": null
+      },
+      {
+        "population": 4,
+        "env_copies": 4,
+        "mode": "hybrid_cuda",
+        "repeats": 3,
+        "median_seconds": 0.14895699988119304,
+        "min_seconds": 0.14437200012616813,
+        "max_seconds": 0.1576928999274969,
+        "interactions": 704,
+        "max_cuda_peak_allocated_bytes": 8544256
+      },
+      {
+        "population": 4,
+        "env_copies": 4,
+        "mode": "parallel_cpu",
+        "repeats": 3,
+        "median_seconds": 1.4903897000476718,
+        "min_seconds": 1.4822420000564307,
+        "max_seconds": 1.4979793999809772,
+        "interactions": 704,
+        "max_cuda_peak_allocated_bytes": null
+      },
+      {
+        "population": 4,
+        "env_copies": 4,
+        "mode": "serial_cpu",
+        "repeats": 3,
+        "median_seconds": 0.09592800005339086,
+        "min_seconds": 0.09406869998201728,
+        "max_seconds": 0.10630959994159639,
+        "interactions": 704,
+        "max_cuda_peak_allocated_bytes": null
+      },
+      {
+        "population": 16,
+        "env_copies": 1,
+        "mode": "batched_native_cpu",
+        "repeats": 3,
+        "median_seconds": 0.15862519992515445,
+        "min_seconds": 0.1494803000241518,
+        "max_seconds": 0.1593564001377672,
+        "interactions": 2240,
+        "max_cuda_peak_allocated_bytes": null
+      },
+      {
+        "population": 16,
+        "env_copies": 1,
+        "mode": "batched_native_cuda",
+        "repeats": 3,
+        "median_seconds": 0.36819159984588623,
+        "min_seconds": 0.360045799985528,
+        "max_seconds": 0.39541690004989505,
+        "interactions": 2240,
+        "max_cuda_peak_allocated_bytes": 8575488
+      },
+      {
+        "population": 16,
+        "env_copies": 1,
+        "mode": "batched_python_cpu",
+        "repeats": 3,
+        "median_seconds": 0.17696670000441372,
+        "min_seconds": 0.17272450006566942,
+        "max_seconds": 0.18120549991726875,
+        "interactions": 2240,
+        "max_cuda_peak_allocated_bytes": null
+      },
+      {
+        "population": 16,
+        "env_copies": 1,
+        "mode": "hybrid_cuda",
+        "repeats": 3,
+        "median_seconds": 0.4797108001075685,
+        "min_seconds": 0.46872569993138313,
+        "max_seconds": 0.48857099981978536,
+        "interactions": 2240,
+        "max_cuda_peak_allocated_bytes": 8574464
+      },
+      {
+        "population": 16,
+        "env_copies": 1,
+        "mode": "parallel_cpu",
+        "repeats": 3,
+        "median_seconds": 1.574654599884525,
+        "min_seconds": 1.485661800019443,
+        "max_seconds": 1.615227300208062,
+        "interactions": 2240,
+        "max_cuda_peak_allocated_bytes": null
+      },
+      {
+        "population": 16,
+        "env_copies": 1,
+        "mode": "serial_cpu",
+        "repeats": 3,
+        "median_seconds": 0.28093199990689754,
+        "min_seconds": 0.26776760001666844,
+        "max_seconds": 0.2818267000839114,
+        "interactions": 2240,
+        "max_cuda_peak_allocated_bytes": null
+      },
+      {
+        "population": 16,
+        "env_copies": 4,
+        "mode": "batched_native_cpu",
+        "repeats": 3,
+        "median_seconds": 0.11687229992821813,
+        "min_seconds": 0.10500620002858341,
+        "max_seconds": 0.11955649987794459,
+        "interactions": 2240,
+        "max_cuda_peak_allocated_bytes": null
+      },
+      {
+        "population": 16,
+        "env_copies": 4,
+        "mode": "batched_native_cuda",
+        "repeats": 3,
+        "median_seconds": 0.21137800021097064,
+        "min_seconds": 0.1952092000283301,
+        "max_seconds": 0.24027030006982386,
+        "interactions": 2240,
+        "max_cuda_peak_allocated_bytes": 8585728
+      },
+      {
+        "population": 16,
+        "env_copies": 4,
+        "mode": "batched_python_cpu",
+        "repeats": 3,
+        "median_seconds": 0.13848800002597272,
+        "min_seconds": 0.13756319996900856,
+        "max_seconds": 0.16132669989019632,
+        "interactions": 2240,
+        "max_cuda_peak_allocated_bytes": null
+      },
+      {
+        "population": 16,
+        "env_copies": 4,
+        "mode": "hybrid_cuda",
+        "repeats": 3,
+        "median_seconds": 0.22873299987986684,
+        "min_seconds": 0.22240070020779967,
+        "max_seconds": 0.2523242000024766,
+        "interactions": 2240,
+        "max_cuda_peak_allocated_bytes": 8584704
+      },
+      {
+        "population": 16,
+        "env_copies": 4,
+        "mode": "parallel_cpu",
+        "repeats": 3,
+        "median_seconds": 1.6305686999112368,
+        "min_seconds": 1.6005979001056403,
+        "max_seconds": 1.7635713000781834,
+        "interactions": 2240,
+        "max_cuda_peak_allocated_bytes": null
+      },
+      {
+        "population": 16,
+        "env_copies": 4,
+        "mode": "serial_cpu",
+        "repeats": 3,
+        "median_seconds": 0.24562780000269413,
+        "min_seconds": 0.2387576000764966,
+        "max_seconds": 0.27215049997903407,
+        "interactions": 2240,
+        "max_cuda_peak_allocated_bytes": null
+      }
+    ]
+  },
+  "ppo_benchmarks": {
+    "cpu": [
+      {
+        "mode": "independent",
+        "device": "cpu",
+        "population": 4,
+        "env_copies": 1,
+        "cuda_peak_allocated_bytes": null,
+        "rollout_and_update_seconds": 0.3264014001470059,
+        "training_interactions": 256,
+        "optimizer_updates_all_individuals": 32,
+        "frozen_evaluation_interactions": 128,
+        "mean_test_fitness": -1.9973514163430082
+      },
+      {
+        "mode": "batched",
+        "device": "cpu",
+        "population": 4,
+        "env_copies": 1,
+        "cuda_peak_allocated_bytes": null,
+        "rollout_and_update_seconds": 0.08040810003876686,
+        "training_interactions": 256,
+        "optimizer_updates_all_individuals": 32,
+        "frozen_evaluation_interactions": 128,
+        "mean_test_fitness": -3.7506996298470767
+      },
+      {
+        "mode": "independent",
+        "device": "cpu",
+        "population": 4,
+        "env_copies": 4,
+        "cuda_peak_allocated_bytes": null,
+        "rollout_and_update_seconds": 0.16274739988148212,
+        "training_interactions": 256,
+        "optimizer_updates_all_individuals": 32,
+        "frozen_evaluation_interactions": 128,
+        "mean_test_fitness": -0.032401849413872696
+      },
+      {
+        "mode": "batched",
+        "device": "cpu",
+        "population": 4,
+        "env_copies": 4,
+        "cuda_peak_allocated_bytes": null,
+        "rollout_and_update_seconds": 0.05853740009479225,
+        "training_interactions": 256,
+        "optimizer_updates_all_individuals": 32,
+        "frozen_evaluation_interactions": 128,
+        "mean_test_fitness": -1.9939097962342203
+      },
+      {
+        "mode": "independent",
+        "device": "cpu",
+        "population": 16,
+        "env_copies": 1,
+        "cuda_peak_allocated_bytes": null,
+        "rollout_and_update_seconds": 1.348996999906376,
+        "training_interactions": 1024,
+        "optimizer_updates_all_individuals": 128,
+        "frozen_evaluation_interactions": 512,
+        "mean_test_fitness": -4.568237306299125
+      },
+      {
+        "mode": "batched",
+        "device": "cpu",
+        "population": 16,
+        "env_copies": 1,
+        "cuda_peak_allocated_bytes": null,
+        "rollout_and_update_seconds": 0.10402109986171126,
+        "training_interactions": 1024,
+        "optimizer_updates_all_individuals": 128,
+        "frozen_evaluation_interactions": 512,
+        "mean_test_fitness": -5.500964971761277
+      },
+      {
+        "mode": "independent",
+        "device": "cpu",
+        "population": 16,
+        "env_copies": 4,
+        "cuda_peak_allocated_bytes": null,
+        "rollout_and_update_seconds": 0.6833877000026405,
+        "training_interactions": 1024,
+        "optimizer_updates_all_individuals": 128,
+        "frozen_evaluation_interactions": 512,
+        "mean_test_fitness": -4.373101586403209
+      },
+      {
+        "mode": "batched",
+        "device": "cpu",
+        "population": 16,
+        "env_copies": 4,
+        "cuda_peak_allocated_bytes": null,
+        "rollout_and_update_seconds": 0.07324890000745654,
+        "training_interactions": 1024,
+        "optimizer_updates_all_individuals": 128,
+        "frozen_evaluation_interactions": 512,
+        "mean_test_fitness": -5.738704484356276
+      }
+    ],
+    "cuda": [
+      {
+        "mode": "independent",
+        "device": "cuda",
+        "population": 4,
+        "env_copies": 1,
+        "cuda_peak_allocated_bytes": 17154560,
+        "rollout_and_update_seconds": 0.8869216002058238,
+        "training_interactions": 256,
+        "optimizer_updates_all_individuals": 32,
+        "frozen_evaluation_interactions": 128,
+        "mean_test_fitness": -0.04794553483952768
+      },
+      {
+        "mode": "batched",
+        "device": "cuda",
+        "population": 4,
+        "env_copies": 1,
+        "cuda_peak_allocated_bytes": 17181184,
+        "rollout_and_update_seconds": 0.2026188001036644,
+        "training_interactions": 256,
+        "optimizer_updates_all_individuals": 32,
+        "frozen_evaluation_interactions": 128,
+        "mean_test_fitness": -0.13235899389837869
+      },
+      {
+        "mode": "independent",
+        "device": "cuda",
+        "population": 4,
+        "env_copies": 4,
+        "cuda_peak_allocated_bytes": 17134080,
+        "rollout_and_update_seconds": 0.43801190005615354,
+        "training_interactions": 256,
+        "optimizer_updates_all_individuals": 32,
+        "frozen_evaluation_interactions": 128,
+        "mean_test_fitness": -2.012809366104193
+      },
+      {
+        "mode": "batched",
+        "device": "cuda",
+        "population": 4,
+        "env_copies": 4,
+        "cuda_peak_allocated_bytes": 17158144,
+        "rollout_and_update_seconds": 0.11313980002887547,
+        "training_interactions": 256,
+        "optimizer_updates_all_individuals": 32,
+        "frozen_evaluation_interactions": 128,
+        "mean_test_fitness": -1.940000080736354
+      },
+      {
+        "mode": "independent",
+        "device": "cuda",
+        "population": 16,
+        "env_copies": 1,
+        "cuda_peak_allocated_bytes": 17154560,
+        "rollout_and_update_seconds": 3.768786499975249,
+        "training_interactions": 1024,
+        "optimizer_updates_all_individuals": 128,
+        "frozen_evaluation_interactions": 512,
+        "mean_test_fitness": -3.9502744105120655
+      },
+      {
+        "mode": "batched",
+        "device": "cuda",
+        "population": 16,
+        "env_copies": 1,
+        "cuda_peak_allocated_bytes": 17315328,
+        "rollout_and_update_seconds": 0.4401515000499785,
+        "training_interactions": 1024,
+        "optimizer_updates_all_individuals": 128,
+        "frozen_evaluation_interactions": 512,
+        "mean_test_fitness": -3.7437189900047088
+      },
+      {
+        "mode": "independent",
+        "device": "cuda",
+        "population": 16,
+        "env_copies": 4,
+        "cuda_peak_allocated_bytes": 17134080,
+        "rollout_and_update_seconds": 2.8930569000076503,
+        "training_interactions": 1024,
+        "optimizer_updates_all_individuals": 128,
+        "frozen_evaluation_interactions": 512,
+        "mean_test_fitness": -4.962374208877009
+      },
+      {
+        "mode": "batched",
+        "device": "cuda",
+        "population": 16,
+        "env_copies": 4,
+        "cuda_peak_allocated_bytes": 17353216,
+        "rollout_and_update_seconds": 0.2187878000549972,
+        "training_interactions": 1024,
+        "optimizer_updates_all_individuals": 128,
+        "frozen_evaluation_interactions": 512,
+        "mean_test_fitness": -5.407043763327238
+      }
+    ]
+  },
+  "raw_artifacts": "results/cuda_validation/2026-10-30",
+  "source_sha256": {
+    "tests/test_cuda.py": "97aec2fe16ab18ad6e24769c63bf469be6867ce2799b06b06d42c9273482b09d",
+    "tests/test_tensor.py": "09cffff97809bc8007eb4835d2cdf6426a0a94694ada2066565857e86784fd5b",
+    "tests/test_growth.py": "462273fe9ca42004829985e5ad6c0c140ade2a6daf0ae523a3e71b38d5b9d6e5",
+    "src/geneticevo/tensor.py": "17f4d821e355d099387321de71cdb4cab1109ed070f87f004851b575626e38d3",
+    "src/geneticevo/ppo.py": "d8a5b46d9c0e5cbacb20e4111a45e1dab7f47404082744b1f9128c22aea20e3b",
+    "src/geneticevo/growth.py": "69811ec87ea6cb6f31270cc00e13a45a08a45f99d585630730ab33634077693c",
+    "src/geneticevo/agents.py": "6214eebb9a064254ffa68eddf86ae06e5878d77d1098bdb6d60be912b6b11512",
+    "src/geneticevo/runner.py": "0b67f627d57a3255a1c5b0c1cc15ff2626804d509d94986b5f3ad87c03453e6d",
+    "benchmarks/equal_work.py": "c293d7bda7678f536d086a6c91459aa8a764885d3087de44be7f10d5c09cde87",
+    "benchmarks/ppo_updates.py": "16f704fbf18351010ed2e55d08a24430ff87a22bf9b6c0bc90ccc1bc9c2c4d56"
+  }
+}

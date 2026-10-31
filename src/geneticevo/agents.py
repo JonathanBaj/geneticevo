@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import copy
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +11,7 @@ import numpy as np
 from gymnasium import spaces
 
 from .core import VectorGenome
+from .growth import NeuralGrowth
 
 
 def validate_spaces(observation_space: Any, action_space: Any) -> None:
@@ -72,6 +73,44 @@ class MLPAgent:
     discrete: bool
     low: np.ndarray
     high: np.ndarray
+    growth: NeuralGrowth | None = None
+
+    def resize_hidden_sizes(self, hidden_sizes, rng):
+        """Resize widths, keeping overlapping genes and preserving outputs on growth.
+
+        New neurons have random incoming weights and zero outgoing weights into
+        existing neurons. They can learn without disrupting the existing policy.
+        Shrinking crops neurons and may change behavior. Adam moments reset on a
+        shape change; growth counters and other training state remain intact.
+        """
+        sizes = tuple(hidden_sizes)
+        if len(sizes) != len(self.hidden_sizes) or any(
+                isinstance(x, bool) or not isinstance(x, int) or x < 1 for x in sizes):
+            raise ValueError('Resize requires positive integer widths and the same number of hidden layers')
+        if self.growth is not None:
+            self.growth.validate_sizes(sizes)
+        if sizes == self.hidden_sizes:
+            return False
+        old = self.parameters()
+        # Compute the new layout without changing the agent until all arrays exist.
+        resized = copy.copy(self)
+        resized.hidden_sizes = sizes
+        parts = []
+        for name, shape in resized.layout():
+            source = old[name]
+            value = np.zeros(shape, dtype=np.float32)
+            overlap = tuple(slice(0, min(a, b)) for a, b in zip(shape, source.shape))
+            value[overlap] = source[overlap]
+            if '_w' in name and shape[1] > source.shape[1]:
+                existing_inputs = min(shape[0], source.shape[0])
+                value[:existing_inputs, source.shape[1]:] = rng.normal(
+                    0, np.sqrt(1 / shape[0]), (existing_inputs, shape[1] - source.shape[1]))
+            parts.append(value.reshape(-1))
+        genome = VectorGenome(np.concatenate(parts))
+        self.hidden_sizes, self.genome = sizes, genome
+        if hasattr(self, 'training_state'):
+            self.training_state.pop('adam', None)
+        return True
 
     def layout(self):
         result = []
@@ -123,17 +162,23 @@ class MLPAgent:
         np.savez(folder / "genome.npz", values=self.genome.vector())
         spec = {"kind": "mlp", "schema": 1, "observation_dim": self.observation_dim,
                 "hidden_sizes": self.hidden_sizes, "action_dim": self.action_dim,
-                "discrete": self.discrete, "low": self.low.tolist(), "high": self.high.tolist()}
+                "discrete": self.discrete, "low": self.low.tolist(), "high": self.high.tolist(),
+                "growth": asdict(self.growth) if self.growth is not None else None}
         (folder / "agent.json").write_text(json.dumps(spec), encoding="utf-8")
 
 
 @dataclass(frozen=True)
 class MLPAgentFactory:
     hidden_sizes: tuple[int, ...] = (64, 64)
+    growth: NeuralGrowth | None = None
 
     def __post_init__(self):
-        if any(x < 1 for x in self.hidden_sizes):
-            raise ValueError("Hidden sizes must be positive")
+        if any(isinstance(x, bool) or not isinstance(x, int) or x < 1 for x in self.hidden_sizes):
+            raise ValueError("Hidden sizes must be positive integers")
+        if self.growth is not None:
+            if not isinstance(self.growth, NeuralGrowth):
+                raise ValueError('growth must be a NeuralGrowth configuration or None')
+            self.growth.validate_sizes(self.hidden_sizes)
 
     def __call__(self, rng, observation_space=None, action_space=None, device="cpu"):
         validate_spaces(observation_space, action_space)
@@ -141,7 +186,7 @@ class MLPAgentFactory:
         action_dim = int(action_space.n if discrete else action_space.shape[0])
         agent = MLPAgent(VectorGenome(np.zeros(1)), observation_space.shape[0], tuple(self.hidden_sizes),
                          action_dim, discrete, np.zeros(action_dim, dtype=np.float32) if discrete else action_space.low.copy(),
-                         np.ones(action_dim, dtype=np.float32) if discrete else action_space.high.copy())
+                         np.ones(action_dim, dtype=np.float32) if discrete else action_space.high.copy(), self.growth)
         parts = []
         for name, shape in agent.layout():
             value = rng.normal(0, np.sqrt(1 / shape[0]), shape) if "_w" in name else np.zeros(shape)
@@ -172,5 +217,17 @@ def load_agent(path: str):
     if spec["kind"] != "mlp":
         raise ValueError("Unknown agent kind")
     return MLPAgent(genome, spec["observation_dim"], tuple(spec["hidden_sizes"]), spec["action_dim"],
-                    spec["discrete"], np.array(spec["low"], np.float32), np.array(spec["high"], np.float32))
+                    spec["discrete"], np.array(spec["low"], np.float32), np.array(spec["high"], np.float32),
+                    NeuralGrowth(**spec["growth"]) if spec.get("growth") is not None else None)
 
+
+def architecture_groups(agents):
+    """Population indices grouped by compatible MLP shape and action bounds."""
+    if not agents or any(not isinstance(agent, MLPAgent) for agent in agents):
+        raise ValueError('Batched policies require MLPAgentFactory agents')
+    groups = {}
+    for i, agent in enumerate(agents):
+        key = (agent.observation_dim, agent.hidden_sizes, agent.action_dim, agent.discrete,
+               tuple(agent.low), tuple(agent.high))
+        groups.setdefault(key, []).append(i)
+    return list(groups.values())

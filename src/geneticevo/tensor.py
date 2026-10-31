@@ -10,7 +10,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from .agents import MLPAgent
+from .agents import MLPAgent, architecture_groups
 from .core import Evaluation
 
 
@@ -240,6 +240,15 @@ def make_tensor_environment(env_factory, tensor_env_factory, agents, copies, dev
 
 @torch.no_grad()
 def evaluate_batched(agents, scenarios, env_factory, tensor_env_factory=None, device="cpu", env_copies=1, max_steps=1000):
+    groups = architecture_groups(agents)
+    if len(groups) > 1:
+        evaluations = [None] * len(agents)
+        for indices in groups:
+            scores = evaluate_batched([agents[i] for i in indices], scenarios, env_factory,
+                                       tensor_env_factory, device, env_copies, max_steps)
+            for i, score in zip(indices, scores):
+                evaluations[i] = score
+        return evaluations
     policy = BatchedPolicy(agents, device)
     returns, lengths = [], []
     for start in range(0, len(scenarios), env_copies):

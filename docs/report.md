@@ -119,12 +119,14 @@ The reproducible scripts and full compact data snapshot are in
 `results/benchmarks`. Records include outcomes, actual interactions, component
 times, and post-run parent RSS. RSS is not peak host memory and excludes child
 process memory. Transfer-only timing, host peak memory, profiler traces, and
-CUDA measurements remain unverified.
+CUDA measurements were added on 2026-10-30 in [CUDA validation](cuda_validation.md);
+the original snapshot above remains unchanged.
 
 ## Unsupported combinations and remaining limitations
 
-- CUDA execution paths exist, but no CUDA correctness/performance claim was
-  validated. Explicit unavailable devices fail with actionable errors.
+- CUDA hardware validation was completed on 2026-10-30 for the configurations
+  documented in [CUDA validation](cuda_validation.md). The earlier timings above
+  retain their original CPU-only context. Unavailable devices still fail clearly.
 - Native PPO supports homogeneous fixed architectures/schedules and synchronous
   stepping. Random filling retains a short population loop; collection uses a
   Python time loop and ordinary tensor allocations. Compilation, mixed precision,

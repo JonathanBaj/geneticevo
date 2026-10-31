@@ -35,3 +35,27 @@ def select(population: list[Individual], rng: np.random.Generator, *,
     weights = np.arange(len(ranked), 0, -1, dtype=float)
     return ranked[int(rng.choice(len(ranked), p=weights / weights.sum()))]
 
+
+
+def parameter_distance(left, right):
+    """Euclidean distance, aligning variable MLP widths by parameter and neuron.
+
+    Missing neurons are treated as zero parameters. Fixed layouts keep the
+    original flat-vector calculation for compatibility with custom genomes.
+    """
+    from .agents import MLPAgent
+    if isinstance(left, MLPAgent) and isinstance(right, MLPAgent) and left.layout() != right.layout():
+        first, second = left.parameters(), right.parameters()
+        squared = 0.0
+        for name in sorted(first.keys() | second.keys()):
+            a, b = first.get(name), second.get(name)
+            if a is None or b is None:
+                squared += float(np.square(b if a is None else a, dtype=np.float64).sum())
+                continue
+            shape = tuple(max(x, y) for x, y in zip(a.shape, b.shape))
+            padded_a, padded_b = np.zeros(shape), np.zeros(shape)
+            padded_a[tuple(slice(0, x) for x in a.shape)] = a
+            padded_b[tuple(slice(0, x) for x in b.shape)] = b
+            squared += float(np.square(padded_a - padded_b).sum())
+        return float(np.sqrt(squared))
+    return float(np.linalg.norm(left.genome.vector() - right.genome.vector()))

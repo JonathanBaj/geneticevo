@@ -59,10 +59,32 @@ provided child genome. Selection hooks have signature
 Crossover hooks accept cloned parent genomes and an RNG and return a compatible
 genome. There is no implicit neural parameter averaging.
 
-The included parameter layout uses separate actor and critic tanh MLPs. Fixed
-architectures enable explicit population matrix operations; mutations never
-share a network between individuals. Custom architecture changes require a
-different backend or an explicit serial path.
+The included parameter layout uses separate actor and critic tanh MLPs.
+`MLPAgentFactory(growth=NeuralGrowth(...))` optionally enables bounded width
+growth and size mutations. Architecture lives on `MLPAgent.hidden_sizes`; the
+parameter vector reflects its current layout. `resize_hidden_sizes` preserves
+overlapping genes, initializes new incoming connections randomly, and zeroes
+new outgoing connections into old neurons so widening preserves actor/critic
+outputs. Removing neurons crops their connections. Shapes change atomically;
+incompatible Adam state is discarded, while growth counters are retained.
+
+Native PPO checks growth at completed rollout/update boundaries and rebuilds
+policy/optimizer tensors without resetting environments. Growth-enabled agents
+train independently using their original population indices for action/growth
+seeds; environment copies remain tensorized on the requested device. Fixed-size
+agents train in groups of compatible architectures. Evaluation uses architecture
+groups and restores original population order. Custom tensor environments must
+work with varying population sizes, including a single policy.
+
+Acquired widths are inherited in both weight-inheritance modes. Baldwinian
+inheritance expands the original genome with fresh, disconnected neurons rather
+than copying learned weights. Fresh offspring mutate widths before scalar
+parameter mutations; hidden layer count stays fixed. Architecture mutations
+appear in lineage; generation metrics include widths/counts. Agent save files
+optionally include growth configuration without changing schema 1. Checkpoints
+retain architecture and per-individual counters/RNG state. Custom crossover is
+currently rejected for growth-enabled agents. No network or optimizer state is
+shared between individuals.
 
 ## Custom evaluators and learners
 

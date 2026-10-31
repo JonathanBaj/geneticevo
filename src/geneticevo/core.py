@@ -168,7 +168,7 @@ class EvolutionConfig:
 
 # Names are stable, and adding a stream never changes existing stream seeds.
 STREAMS = {"initialization": 1, "mutation": 2, "training": 3, "actions": 4,
-           "validation": 5, "test": 6, "archive": 7, "selection": 8, "diversity": 9}
+           "validation": 5, "test": 6, "archive": 7, "selection": 8, "diversity": 9, "growth": 10}
 
 
 def seed_for(seed: int, stream: str, *coordinates: int) -> int:

@@ -86,15 +86,18 @@ Declared ranges and tested versions:
 |---|---|---|
 | NumPy | >=1.26,<3 | 2.4.4 |
 | Gymnasium | >=1.2,<1.3 | 1.2.3 |
-| PyTorch (optional) | >=2.12,<2.13 | 2.12.1+cu126, CPU execution |
+| PyTorch (optional) | >=2.12,<2.13 | 2.12.1+cu126, CPU and CUDA execution |
 | SB3 (optional) | >=2.9,<2.10 | 2.9.0 |
 | PettingZoo (optional) | >=1.24,<1.26 | 1.25.0 |
 | Matplotlib (optional) | >=3.10,<3.11 | 3.10.6 |
 
 Only the listed versions were exercised; the entire allowed ranges were not
-tested. The tensor backend and native PPO were validated on CPU. CUDA hardware
-execution and performance have not been validated in this environment; the CUDA
-test is skipped when no usable GPU is available. See [validation](https://github.com/JonathanBaj/geneticevo/blob/main/docs/validation.md).
+tested. CPU and CUDA execution were validated, including native/hybrid inference,
+native PPO, optional SB3 PPO/DQN, neural growth, and checkpoint resume. The CUDA
+checks ran on an NVIDIA GeForce RTX 4060 Laptop GPU with PyTorch 2.12.1+cu126
+on 2026-10-30. CUDA tests skip when no usable GPU is available. Measured results,
+hardware details, and reproduction commands are in [CUDA validation](docs/cuda_validation.md).
+See also [validation](https://github.com/JonathanBaj/geneticevo/blob/main/docs/validation.md).
 
 ## Complete quickstart
 
@@ -146,6 +149,8 @@ python examples/sb3_learning.py --algorithm PPO
 python examples/sb3_learning.py --algorithm DQN --inheritance baldwinian
 python examples/native_ppo.py --device cpu
 python examples/native_ppo.py --continuous
+python examples/neural_growth.py --device cpu
+python examples/neural_growth.py --inheritance baldwinian
 python examples/shared_world.py
 python examples/shared_world.py --rl
 ```
@@ -230,6 +235,86 @@ over a rollout. Discrete categorical and continuous tanh-squashed Gaussian
 likelihoods are implemented. Continuous entropy regularization uses the base
 normal's entropy; its default coefficient is zero.
 
+## Optional lifetime network growth
+
+Enable growth on the built-in MLP factory; `growth=None` (the default) retains
+fixed-size networks and the existing behavior:
+
+```python
+from geneticevo import NeuralGrowth
+from geneticevo.agents import MLPAgentFactory
+
+factory = MLPAgentFactory(
+    hidden_sizes=(4, 4),
+    growth=NeuralGrowth(
+        check_every=32,             # Actual training transitions per individual
+        neurons_per_growth=2,       # Added to one eligible hidden layer per event
+        max_hidden_size=32,         # Hard cap per hidden layer
+        min_hidden_size=2,          # Lower bound for offspring size mutations
+        value_loss_threshold=None, # Scheduled growth; use a number to gate on value loss
+        mutation_probability=0.1,   # Probability per layer at reproduction
+        mutation_step=2,            # Add or remove 1..2 neurons on a mutation
+    ),
+)
+```
+
+Pass this factory to an `Evolution` with `NativePPO`, `backend="batched"`, and a
+positive `learning_budget`. Install the `torch` extra for PPO. A complete runnable
+example is [examples/neural_growth.py](examples/neural_growth.py):
+
+```sh
+python examples/neural_growth.py --device cpu
+python examples/neural_growth.py --continuous --inheritance baldwinian
+python examples/neural_growth.py --value-loss-threshold 0.5
+```
+
+During training, growth is checked after completed PPO rollouts. An eligible
+hidden layer is chosen randomly and widened in both actor and critic networks.
+Checks round up to a rollout boundary and perform at most one growth event at a
+time. Existing parameters are retained; new neurons receive random incoming
+weights and zero outgoing weights into existing neurons, preserving the current
+policy and value outputs at the moment of growth. Later updates can learn to
+use them. The environment continues without resetting when the network grows.
+Adam moments reset after a size change; growth counters continue.
+
+By default, growth is scheduled. Set `value_loss_threshold` to require the mean
+value loss across that rollout's PPO updates to meet the threshold before
+adding capacity. This is a learning-error heuristic, not a measurement of
+novelty, intelligence, or a biological model. Larger networks need more memory
+and may perform worse; choose a suitable width cap.
+
+The agent's final **hidden-layer sizes** become inherited traits in both modes:
+Lamarckian offspring inherit learned weights and sizes; Baldwinian offspring
+inherit sizes while retaining the original genes in overlapping neurons and
+initializing additional capacity afresh. Each layer may then mutate up or down
+within its bounds, followed by normal parameter mutation. Lifetime growth only
+adds neurons; shrinking happens through offspring mutations. Layer count,
+observation size, and action size stay fixed. The growth settings themselves
+are configuration, not mutated traits. Elites keep their sizes; immigrants use
+the factory's starting sizes. Fresh children reset growth and optimizer counters.
+
+Growth-enabled agents learn individually, with their environment copies still
+batched on the selected CPU/CUDA device. Frozen evaluation groups agents by
+architecture. Fixed-size agents retain population-batched learning. This avoids
+padding every policy to the maximum size, but may reduce population throughput.
+Growth and size mutations, saving/loading, archives, and generation-boundary
+resume are supported. Native and hybrid CUDA execution, growth, and resume were
+checked on the hardware listed in [CUDA validation](docs/cuda_validation.md).
+
+Automatic lifetime growth currently supports the built-in MLP with native PPO.
+Custom MLP learners can opt in with `supports_neural_growth=True` and call
+`agent.growth.after_update(agent, interactions, value_loss, rng)` at safe update
+boundaries. SB3 policies and communicating task-policy wrappers do not support
+this feature. `crossover` must remain `None`. With `learner=None`, offspring size
+mutations still work, but networks do not grow during frozen evaluation.
+
+Metrics record `network_hidden_sizes`, `network_parameter_counts`, and learner
+`growth_events` (mean per trained individual per generation). Lineage records
+architecture sizes before/after each offspring mutation. Agent folders retain
+sizes and growth configuration; training counters require a full checkpoint.
+For different widths, sampled parameter distances align parameters by layer and
+neuron index, treating missing neurons as zeros.
+
 ## Supported combinations
 
 | Agents / learner | Serial CPU | CPU process evaluation | Batched policies, Python env | Tensor environment |
@@ -246,8 +331,9 @@ flat, finite, strictly bounded `Box`. DQN supports `Discrete` only. Shared world
 use the PettingZoo Parallel protocol with flat `Box` observations. Other spaces
 need explicit tested adapters.
 
-`backend="batched"` uses fixed shared architectures. Tensor computation also runs
-on CPU. Omitting `tensor_env_factory` uses `GymTensorBridge`: Python simulation
+`backend="batched"` groups compatible MLP architectures for evaluation. Fixed-size
+learning uses population batches; growth-enabled policies learn individually.
+Tensor computation also runs on CPU. Omitting `tensor_env_factory` uses `GymTensorBridge`: Python simulation
 stays on CPU even if policies run on CUDA. This is labeled hybrid execution.
 Setting a device never migrates arbitrary Python simulation code. Native tensor
 environments require matching policy/environment devices. The included

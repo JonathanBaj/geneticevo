@@ -52,16 +52,18 @@ discrete and continuous actions, shared evolution/fixed-message learning, and
 generalization/adaptation. A compatibility check should verify package metadata
 and import versions agree. `pip check` should pass in both environments.
 
-## GPU claim boundary
+## GPU validation status
 
-CUDA availability is checked before tests/examples. If CUDA is unavailable,
-native tensor mathematics and PPO are tested on CPU, the conditional CUDA test
-is skipped, and an explicit unavailable CUDA request must fail clearly.
-This does not verify CUDA correctness, GPU driver compatibility, mixed-device
-behavior, throughput, or speedups. The README describes the implemented CUDA
-backend and explicitly records that GPU execution/performance has not been
-validated here. A CUDA-equipped machine
-must validate these before hardware-success or speedup claims.
+CUDA execution and bounded performance measurements were validated on 2026-10-30
+with an NVIDIA GeForce RTX 4060 Laptop GPU, driver 555.97, and PyTorch
+2.12.1+cu126. This includes native and hybrid inference/PPO, discrete and
+continuous actions, neural growth, checkpoint resume, and SB3 PPO/DQN. See
+[CUDA validation](cuda_validation.md) for exact results and reproduction commands.
+
+On machines without usable CUDA, hardware-only cases skip and CPU checks still
+run. These measurements establish the tested configurations on this machine;
+they do not establish general GPU speedups or coverage of every GPU/driver.
+The historical alpha-1/alpha-2 results below describe their original runs.
 
 ## Historical alpha-1 validation
 

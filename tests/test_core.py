@@ -122,6 +122,16 @@ from geneticevo.agents import VectorAgentFactory
 from geneticevo.evaluation import ObjectiveEvaluator
 result = Evolution(agent_factory=VectorAgentFactory(3), evaluator=ObjectiveEvaluator(lambda v,s: float(v.sum())), config=EvolutionConfig(population_size=2, elite_count=1, generations=2)).run()
 assert len(result.history) == 2
+from geneticevo import NeuralGrowth
+from geneticevo.agents import MLPAgentFactory
+from geneticevo.environments import Reach1D
+from functools import partial
+result = Evolution(agent_factory=MLPAgentFactory((4,), NeuralGrowth(mutation_probability=1)),
+    env_factory=partial(Reach1D, horizon=2),
+    config=EvolutionConfig(population_size=3, elite_count=1, generations=2, evaluation_episodes=1)).run()
+assert result.history[0]['network_hidden_sizes'] == [[4], [4], [4]]
+assert all('architecture' in row['mutation'] for row in result.lineage if row['parents'])
+assert 'torch' not in sys.modules
 '''
         environment = os.environ.copy()
         environment["PYTHONPATH"] = str(Path(__file__).parents[1] / "src")

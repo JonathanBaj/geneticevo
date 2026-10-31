@@ -11,8 +11,9 @@ from typing import Callable
 import numpy as np
 
 from .core import EvolutionConfig, Individual, scenarios_for, seed_for
+from .agents import MLPAgent, architecture_groups
 from .evaluation import GymEvaluator
-from .evolution import GaussianMutation, select
+from .evolution import GaussianMutation, select, parameter_distance
 from .execution import evaluate_population
 from .results import Result, load_checkpoint, save_checkpoint, software_metadata, write_json, json_default, describe
 import json
@@ -55,7 +56,7 @@ class Evolution:
         self.metadata.update({"config": self.config.as_dict(), "backend": backend, "policy_device": device,
                               "environment_device": environment_device, "learning": repr(learner),
                               "mutation": repr(self.mutation), "seeds": {k: seed_for(self.config.seed, k) for k in
-                              ("initialization", "mutation", "selection", "training", "actions", "validation", "test", "archive")}})
+                              ("initialization", "mutation", "selection", "training", "actions", "validation", "test", "archive", "growth")}})
         self.provenance = {key: describe(getattr(self, key)) for key in ("agent_factory", "env_factory", "training_env_factory",
             "tensor_env_factory", "evaluator", "mutation", "learner", "selection_hook", "crossover", "validation_sampler", "archive_sampler")}
         self.metadata["components"] = self.provenance
@@ -128,8 +129,18 @@ class Evolution:
             agent = self._factory_agent(index)
             if any(agent is individual.agent for individual in self.population):
                 raise ValueError("agent_factory returned the same mutable agent for multiple individuals")
+            if isinstance(agent, MLPAgent) and agent.growth is not None:
+                if self.crossover is not None:
+                    raise ValueError('NeuralGrowth currently requires crossover=None')
+                if self.learner and not getattr(self.learner, 'supports_neural_growth', False):
+                    raise ValueError('NeuralGrowth requires NativePPO or a custom learner with supports_neural_growth=True')
             if index < len(self.initial_agents):
                 initial = self.initial_agents[index]
+                if isinstance(agent, MLPAgent) and isinstance(initial, MLPAgent) and agent.growth is not None:
+                    if agent.growth != initial.growth:
+                        raise ValueError('Initial NeuralGrowth configuration does not match')
+                    agent.resize_hidden_sizes(initial.hidden_sizes,
+                        np.random.default_rng(seed_for(self.config.seed, 'growth', index)))
                 if type(initial) is not type(agent) or initial.genome.vector().shape != agent.genome.vector().shape:
                     raise ValueError("Initial checkpoint agent is incompatible with the configured factory")
                 if hasattr(initial, "layout") and initial.layout() != agent.layout():
@@ -146,7 +157,9 @@ class Evolution:
             self.population.append(self._new(agent, 0))
         if self.backend == "batched":
             from .tensor import BatchedPolicy
-            BatchedPolicy([x.agent for x in self.population], self.device)
+            agents = [x.agent for x in self.population]
+            for indices in architecture_groups(agents):
+                BatchedPolicy([agents[i] for i in indices], self.device)
 
     def _evaluate(self, agents, scenarios, generation):
         action_seed = seed_for(self.config.seed, "validation", generation)
@@ -183,6 +196,14 @@ class Evolution:
                                                 seed_for(self.config.seed, "actions", generation, numeric_id))
                     reports.append(report)
             self.training_interactions += sum(r.interactions for r in reports)
+        if self.config.inheritance == 'baldwinian':
+            for index, (individual, learned) in enumerate(zip(self.population, agents)):
+                inherited = individual.agent
+                if isinstance(inherited, MLPAgent) and inherited.growth is not None:
+                    # The acquired size is heritable even when learned weights are
+                    # discarded. Preserve birth genes in the overlapping subnetwork.
+                    inherited.resize_hidden_sizes(learned.hidden_sizes,
+                        np.random.default_rng(seed_for(self.config.seed, 'growth', generation, index, 1)))
         return agents, reports
 
     def _update_archive(self, agents, evaluations, generation):
@@ -205,7 +226,8 @@ class Evolution:
         # Identical genomes need not occupy the entire archive.
         self.archive = []
         for candidate in candidates:
-            if not any(np.array_equal(candidate.agent.genome.vector(), x.agent.genome.vector()) for x in self.archive):
+            if not any(getattr(candidate.agent, "hidden_sizes", None) == getattr(x.agent, "hidden_sizes", None) and
+                       np.array_equal(candidate.agent.genome.vector(), x.agent.genome.vector()) for x in self.archive):
                 self.archive.append(candidate)
             if len(self.archive) == self.config.archive_size:
                 break
@@ -229,7 +251,12 @@ class Evolution:
                                maximize=self.config.maximize, tournament_size=self.config.tournament_size)
                 child.genome.assign(self.crossover(parent.agent.genome.clone(), other.agent.genome.clone(), self.mutation_rng).vector())
                 parents += (other.id,)
+            architecture_mutation = None
+            if isinstance(child, MLPAgent) and child.growth is not None:
+                architecture_mutation = child.growth.mutate(child, self.mutation_rng)
             metadata = self.mutation(child.genome, self.mutation_rng)
+            if architecture_mutation is not None:
+                metadata = {**metadata, 'architecture': architecture_mutation}
             population.append(self._new(child, generation, parents, metadata))
         while len(population) < self.config.population_size:
             population.append(self._new(self._factory_agent(self.next_id), generation, mutation={"kind": "immigrant"}))
@@ -349,6 +376,9 @@ class Evolution:
                       "interactions_per_second": (self.training_interactions + self.evaluation_interactions) / max(self.elapsed, 1e-9),
                       "elites": cfg.elite_count if generation else 0, "immigrants": cfg.immigrant_count if generation else 0,
                       "mutation": repr(self.mutation), "world_steps": sum(x.world_steps for x in evaluations)}
+            if any(isinstance(agent, MLPAgent) and agent.growth is not None for agent in agents):
+                record['network_hidden_sizes'] = [list(agent.hidden_sizes) for agent in agents]
+                record['network_parameter_counts'] = [agent.genome.vector().size for agent in agents]
             if before:
                 record["pre_learning_mean"] = float(np.mean([x.fitness for x in before]))
                 record["learning_gain"] = record["mean"] - record["pre_learning_mean"]
@@ -358,7 +388,7 @@ class Evolution:
             if cfg.diversity_pairs:
                 rng = np.random.default_rng(seed_for(cfg.seed, "diversity", generation))
                 pairs = rng.integers(0, len(agents), (cfg.diversity_pairs, 2))
-                record["sampled_parameter_distance"] = float(np.mean([np.linalg.norm(agents[i].genome.vector() - agents[j].genome.vector()) for i, j in pairs]))
+                record["sampled_parameter_distance"] = float(np.mean([parameter_distance(agents[i], agents[j]) for i, j in pairs]))
             self.history.append(record)
             reason = self._stop()
             if output:

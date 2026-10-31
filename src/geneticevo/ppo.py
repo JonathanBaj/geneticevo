@@ -8,7 +8,7 @@ import math
 import numpy as np
 import torch
 
-from .agents import MLPAgent
+from .agents import MLPAgent, architecture_groups
 from .core import LearnReport, seed_for
 from .learners import GenomeLearner
 from .tensor import BatchedPolicy, IndependentRNG, make_tensor_environment, resolve_device
@@ -94,13 +94,17 @@ class IndependentAdam:
 
     def export(self, agents):
         for index, agent in enumerate(agents):
-            agent.training_state = {"adam": {"step": float(self.steps[index].cpu()),
+            if not hasattr(agent, 'training_state'):
+                agent.training_state = {}
+            agent.training_state['adam'] = {"step": float(self.steps[index].cpu()),
                 "first": {name: value[index].detach().cpu().clone() for name, value in self.first.items()},
-                "second": {name: value[index].detach().cpu().clone() for name, value in self.second.items()}}}
+                "second": {name: value[index].detach().cpu().clone() for name, value in self.second.items()}}
 
 
 @dataclass(frozen=True)
 class NativePPO(GenomeLearner):
+    supports_neural_growth = True
+
     env_copies: int = 1
     rollout_steps: int = 32
     epochs: int = 2
@@ -154,15 +158,39 @@ class NativePPO(GenomeLearner):
         return self.learn_population([agent], env_factory, None, budget, environment_seed, action_seed)[0]
 
     def learn_population(self, agents, env_factory, tensor_env_factory, budget, seed, generation):
+        # Growth-enabled individuals learn separately because widths can diverge
+        # at any rollout. Environment copies still execute as tensors on device.
+        # Non-growing individuals retain batching within each compatible shape.
+        groups = architecture_groups(agents)
+        batches = []
+        for group in groups:
+            fixed = [i for i in group if agents[i].growth is None]
+            if fixed:
+                batches.append(fixed)
+            batches.extend([i] for i in group if agents[i].growth is not None)
+        reports = [None] * len(agents)
+        for indices in batches:
+            group_reports = self._learn_group([agents[i] for i in indices], env_factory,
+                tensor_env_factory, budget, seed, generation, indices,
+                split=len(batches) > 1 or any(a.growth is not None for a in agents))
+            for i, report in zip(indices, group_reports):
+                reports[i] = report
+        return reports
+
+    def _learn_group(self, agents, env_factory, tensor_env_factory, budget, seed, generation, member_indices, split):
         if budget < 1:
             raise ValueError("Learning budget must be positive")
         policy = BatchedPolicy(agents, self.device)
         optimizer = IndependentAdam(policy, self.learning_rate, agents=agents)
-        rng = IndependentRNG([seed_for(seed, "actions", generation, i) for i in range(len(agents))], self.device)
+        rng = IndependentRNG([seed_for(seed, "actions", generation, i) for i in member_indices], self.device)
+        growth = agents[0].growth
+        growth_rng = np.random.default_rng(seed_for(seed, 'growth', generation, member_indices[0])) if growth else None
+        environment_seed = (seed_for(seed, 'training', generation, member_indices[0]) if split else
+                            seed_for(seed, 'training', generation))
         env = make_tensor_environment(env_factory, tensor_env_factory, agents, self.env_copies,
-                                      self.device, seed_for(seed, "training", generation))
+                                      self.device, environment_seed)
         rollout_count = math.ceil(budget / (self.env_copies * self.rollout_steps))
-        metric_totals, updates = {}, 0
+        metric_totals, updates, growth_events = {}, 0, 0
         try:
             observations = env.reset()
             for _ in range(rollout_count):
@@ -186,6 +214,8 @@ class NativePPO(GenomeLearner):
                          "advantages": advantages.flatten(1, 2), "returns": returns.flatten(1, 2)}
                 adv = batch["advantages"]
                 batch["advantages"] = (adv - adv.mean(1, keepdim=True)) / (adv.std(1, unbiased=False, keepdim=True) + 1e-8)
+                rollout_value_loss = torch.zeros(len(agents), device=policy.device) if growth is not None else None
+                rollout_updates = 0
                 count = self.rollout_steps * self.env_copies
                 rows = torch.arange(len(agents), device=policy.device)[:, None]
                 for _ in range(self.epochs):
@@ -200,13 +230,32 @@ class NativePPO(GenomeLearner):
                         metrics["gradient_norm"] = clip_individual_gradients(policy.parameters(), self.max_gradient_norm)
                         optimizer.step()
                         updates += 1
+                        if growth is not None:
+                            rollout_updates += 1
+                            rollout_value_loss += metrics['value_loss'].detach()
                         for key, value in metrics.items():
                             metric_totals[key] = metric_totals.get(key, torch.zeros_like(value)) + value.detach()
+                if growth is not None:
+                    policy.export(agents)
+                    optimizer.export(agents)
+                    changed = growth.after_update(agents[0], count,
+                        float((rollout_value_loss[0] / rollout_updates).cpu()), growth_rng)
+                    if changed:
+                        growth_events += 1
+                        # Observations and environments continue across resizing.
+                        # Resize clears incompatible Adam state; rebuild tensors.
+                        policy = BatchedPolicy(agents, self.device)
+                        optimizer = IndependentAdam(policy, self.learning_rate, agents=agents)
             policy.export(agents)
             optimizer.export(agents)
         finally:
             env.close()
         actual = rollout_count * self.env_copies * self.rollout_steps
-        return [LearnReport(actual, updates, budget, {key: float(value[i].cpu()) / updates for key, value in metric_totals.items()})
-                for i in range(len(agents))]
+        reports = [LearnReport(actual, updates, budget,
+                    {key: float(value[i].cpu()) / updates for key, value in metric_totals.items()})
+                   for i in range(len(agents))]
+        if growth is not None:
+            reports[0].metrics.update(growth_events=growth_events,
+                hidden_neurons=sum(agents[0].hidden_sizes), parameters=agents[0].genome.values.size)
+        return reports
 
