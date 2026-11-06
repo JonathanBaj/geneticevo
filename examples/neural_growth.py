@@ -16,6 +16,8 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='cpu')
     parser.add_argument('--inheritance', choices=('lamarckian', 'baldwinian'), default='lamarckian')
     parser.add_argument('--continuous', action='store_true')
+    parser.add_argument('--accelerated', action='store_true')
+    parser.add_argument('--chunk-size', type=int)
     parser.add_argument('--value-loss-threshold', type=float, default=None,
                         help='Only grow when mean PPO value loss meets this threshold')
     args = parser.parse_args()
@@ -27,7 +29,8 @@ if __name__ == '__main__':
         env_factory=partial(Reach1D, continuous=args.continuous),
         tensor_env_factory=partial(TensorReach1D, continuous=args.continuous),
         agent_factory=MLPAgentFactory(hidden_sizes=(4, 4), growth=growth),
-        learner=NativePPO(env_copies=2, rollout_steps=8, epochs=2, minibatch_size=16, device=args.device),
+        learner=NativePPO(env_copies=2, rollout_steps=8, epochs=2, minibatch_size=16, device=args.device,
+            accelerated=args.accelerated, population_chunk_size=args.chunk_size),
         backend='batched', device=args.device, environment_device=args.device,
         config=EvolutionConfig(population_size=4, generations=3, elite_count=1,
             learning_budget=64, env_copies=2, evaluation_episodes=2,

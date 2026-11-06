@@ -68,13 +68,26 @@ new outgoing connections into old neurons so widening preserves actor/critic
 outputs. Removing neurons crops their connections. Shapes change atomically;
 incompatible Adam state is discarded, while growth counters are retained.
 
-Native PPO checks growth at completed rollout/update boundaries and rebuilds
-policy/optimizer tensors without resetting environments. Growth-enabled agents
-train independently using their original population indices for action/growth
-seeds; environment copies remain tensorized on the requested device. Fixed-size
-agents train in groups of compatible architectures. Evaluation uses architecture
-groups and restores original population order. Custom tensor environments must
-work with varying population sizes, including a single policy.
+Native PPO checks growth at completed rollout/update boundaries without resetting
+environments. The default path trains growing agents individually and rebuilds
+policy/optimizer tensors at growth. Fixed-size agents use architecture groups.
+The opt-in accelerated path groups by spaces and depth, allocates one bounded
+capacity per layer, and masks each individual's active hidden prefix. Growth
+copies only newly initialized slots and clears only that individual's Adam
+moments and step counter. Existing device weights remain in place. Portable
+exports crop parameters and moments to active shapes; generation checkpoints
+retain the existing CPU schema.
+
+Accelerated action, shuffle, environment, and growth streams use separate seeds
+derived from generation and individual identity. The runner passes numeric
+individual IDs; direct learn_population calls can pass member_ids explicitly.
+TensorReach1D and GymTensorBridge implement set_member_seeds(seeds) so chunking
+and regrouping preserve each individual's environment stream as well. Custom
+tensor environments need this method for accelerated training and may implement
+prepare_rollout(steps) to batch reset randomness. Fixed rollout shapes and work
+schedules are required for reproducibility; CPU/CUDA bitwise equivalence is not
+promised. Evaluation preserves original population order and can also be chunked.
+All chunks complete before selection. See [accelerated PPO](accelerated_ppo.md).
 
 Acquired widths are inherited in both weight-inheritance modes. Baldwinian
 inheritance expands the original genome with fresh, disconnected neurons rather

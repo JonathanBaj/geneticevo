@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from pathlib import Path
 import pickle
@@ -113,6 +114,12 @@ class Evolution:
         self.lineage.append({"id": individual.id, "born": generation, "parents": parents, "mutation": mutation or {}})
         return individual
 
+    def _profile_phase(self, name):
+        if self.backend == "batched":
+            import torch
+            return torch.profiler.record_function("generation." + name)
+        return nullcontext()
+
     def _factory_agent(self, coordinate):
         observation_space = action_space = None
         if self.env_factory:
@@ -155,24 +162,30 @@ class Evolution:
             elif self.backend != "batched" and self.device != "cpu" and type(agent).__module__ == "geneticevo.agents":
                 raise ValueError("NumPy policies use CPU; select backend='batched' for tensor policy execution")
             self.population.append(self._new(agent, 0))
-        if self.backend == "batched":
+        if self.backend == "batched" and not getattr(self.learner, "accelerated", False):
             from .tensor import BatchedPolicy
             agents = [x.agent for x in self.population]
             for indices in architecture_groups(agents):
                 BatchedPolicy([agents[i] for i in indices], self.device)
+        # Accelerated learning validates and constructs its policy per chunk.
+        # Building and discarding another GPU copy here duplicates setup work.
 
     def _evaluate(self, agents, scenarios, generation):
         action_seed = seed_for(self.config.seed, "validation", generation)
         if self.backend == "batched":
             from .tensor import evaluate_batched
             return evaluate_batched(agents, scenarios, self.env_factory, self.tensor_env_factory,
-                                    self.device, self.config.env_copies, self.config.max_episode_steps)
+                self.device, self.config.env_copies, self.config.max_episode_steps,
+                population_chunk_size=getattr(self.learner, "population_chunk_size", None),
+                masked=getattr(self.learner, "accelerated", False),
+                growth_capacity=getattr(self.learner, "growth_capacity", None))
         if hasattr(self.evaluator, "evaluate_population"):
             return self.evaluator.evaluate_population(agents, scenarios, action_seed)
         return evaluate_population(self.evaluator, agents, scenarios, action_seed,
                                    self.backend, self.config.workers)
 
     def _learn(self, generation):
+        self._learning_phase_timings = {}
         agents, indices = [], []
         for index, individual in enumerate(self.population):
             agent = individual.agent
@@ -186,8 +199,15 @@ class Evolution:
             if hasattr(self.learner, "learn_population"):
                 if len(indices) != len(agents):
                     raise ValueError("Native batched learning requires elite_learning=True")
+                options = {}
+                if getattr(self.learner, "measure_phases", False):
+                    options["timings"] = self._learning_phase_timings
+                if getattr(self.learner, "accelerated", False):
+                    options["member_ids"] = [int(x.id[1:]) for x in self.population]
+                # learn_population and _evaluate finish every chunk before
+                # fitness is assigned or reproduction/selection can run.
                 reports = self.learner.learn_population(agents, self.training_env_factory, self.tensor_env_factory,
-                                                       self.config.learning_budget, self.config.seed, generation)
+                    self.config.learning_budget, self.config.seed, generation, **options)
             else:
                 for index in indices:
                     numeric_id = int(self.population[index].id[1:])
@@ -313,7 +333,8 @@ class Evolution:
         elif self.population:
             raise ValueError("Create a new Evolution or resume a generation-boundary checkpoint")
         else:
-            self._initialize()
+            with self._profile_phase("initialize"):
+                self._initialize()
         elapsed_before_run = self.elapsed
         cfg = self.config
         output = Path(cfg.output_dir) if cfg.output_dir else None
@@ -329,28 +350,34 @@ class Evolution:
             timings = {}
             part = time.perf_counter()
             if generation:
-                self._breed(generation)
+                with self._profile_phase("reproduction"):
+                    self._breed(generation)
             timings["reproduction_seconds"] = time.perf_counter() - part
             scenarios = scenarios_for(cfg.seed, "validation", cfg.evaluation_episodes, generation, self.validation_sampler)
             before = None
             part = time.perf_counter()
             if self.learner and cfg.measure_pre_learning:
-                before = self._evaluate([x.agent for x in self.population], scenarios, generation)
+                with self._profile_phase("pre_evaluation"):
+                    before = self._evaluate([x.agent for x in self.population], scenarios, generation)
                 cost = sum(x.interactions for x in before)
                 self.evaluation_interactions += cost
                 self.pre_learning_interactions += cost
             timings["pre_evaluation_seconds"] = time.perf_counter() - part
             part = time.perf_counter()
-            agents, reports = self._learn(generation)
+            with self._profile_phase("learning"):
+                agents, reports = self._learn(generation)
             timings["learning_seconds"] = time.perf_counter() - part
+            timings.update({"learning_" + key: value for key, value in self._learning_phase_timings.items()})
             part = time.perf_counter()
-            evaluations = self._evaluate(agents, scenarios, generation)
+            with self._profile_phase("evaluation"):
+                evaluations = self._evaluate(agents, scenarios, generation)
             self.evaluation_interactions += sum(x.interactions for x in evaluations)
             for individual, evaluation in zip(self.population, evaluations):
                 individual.evaluation = evaluation
             timings["evaluation_seconds"] = time.perf_counter() - part
             part = time.perf_counter()
-            self._update_archive(agents, evaluations, generation)
+            with self._profile_phase("archive"):
+                self._update_archive(agents, evaluations, generation)
             timings["archive_seconds"] = time.perf_counter() - part
             score = self.archive[0].evaluation.fitness
             better = score > self.best_seen if cfg.maximize else score < self.best_seen

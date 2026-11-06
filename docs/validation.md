@@ -75,11 +75,16 @@ CUDA complete-run timing and peak allocated device memory were measured on
 2026-10-30; see [CUDA validation](cuda_validation.md). Missing measurements are
 explicitly labeled rather than inferred.
 
-`ppo_updates.py` compares independent and batched native PPO with equal actual
-transitions and optimizer-update counts. It reports rollout+update time and
-common frozen-test performance. Training RNG trajectories differ between
-routes; this is an equal-work smoke benchmark, not a matched-trajectory
-reproducibility or algorithm superiority study.
+`ppo_updates.py` compares native and opt-in accelerated PPO on CPU and CUDA at
+populations 16, 64, 256, and 1,024, with configurable widths, copies, and chunks.
+It warms every configuration and reports repeat medians for rollout, PPO update,
+full generation time, throughput, and peak allocated CUDA memory. Raw samples,
+actual interaction/update counts, ablations, and optional profiler traces are
+retained. Training RNG trajectories differ between routes; this is an equal-work
+benchmark, not an algorithm superiority study. GPU validation on 2026-11-05
+passed 50 tests and 21 subtests with no skips. See the
+[measured results](accelerated_ppo_benchmarks_2026-11-05.md) and
+[commands and methodology](accelerated_ppo.md).
 
 `baselines.py` uses three independent seeds and reports frozen random behavior,
 evolution only, RL only, evolution plus RL, and fixed-policy communication

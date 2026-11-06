@@ -1,5 +1,5 @@
 include README.md pyproject.toml LICENSE
-recursive-include docs *.md *.json
+recursive-include docs *.md *.json *.png
 recursive-include examples *.py
 recursive-include tests *.py
 recursive-include benchmarks *.py

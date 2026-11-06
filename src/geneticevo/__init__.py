@@ -7,4 +7,4 @@ from .growth import NeuralGrowth
 
 __all__ = ["Evolution", "EvolutionConfig", "GaussianMutation", "Evaluation", "Scenario",
            "VectorGenome", "LearnReport", "load_agent", "NeuralGrowth"]
-__version__ = "0.1.0a4"
+__version__ = "0.1.0a5"

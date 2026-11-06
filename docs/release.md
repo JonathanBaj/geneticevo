@@ -1,4 +1,39 @@
-# Alpha release preparation: geneticevo 0.1.0a2
+# Alpha release preparation: geneticevo 0.1.0a5
+
+Prepared locally on 2026-11-06. Both `pyproject.toml` and
+`src/geneticevo/__init__.py` declare `0.1.0a5`. Use the matching GitHub tag
+`v0.1.0a5` and mark the GitHub release as a prerelease.
+
+This release adds opt-in accelerated CPU/CUDA population PPO, fixed-capacity
+masked neural growth, reproducible population chunks, and GPU benchmark/profile
+tooling. [GPU correctness and measured results](accelerated_ppo_benchmarks_2026-11-05.md)
+cover the implementation. Historical benchmark metadata retains its recorded
+versions; it is not relabeled for this release.
+
+Short GitHub release description:
+
+> Opt-in accelerated CUDA PPO with batched neural growth, reproducible population chunking, GPU benchmarks, and validated checkpoint resume.
+
+Build and check only the new release artifacts in a separate output directory:
+
+```powershell
+python -m build --no-isolation --outdir dist/0.1.0a5
+python -m twine check --strict dist/0.1.0a5/*
+```
+
+Commit and push all additions, including new tests, documentation, benchmark
+JSON, and the benchmark PNG. `results/`, virtual environments, and build outputs
+are ignored and are not release source files. Publish a GitHub prerelease tagged
+`v0.1.0a5` at that commit. The existing `release.yml` workflow tests and builds
+that tagged source, then publishes its artifacts to PyPI using the configured
+Trusted Publisher and GitHub `pypi` environment. A push or a tag alone does not
+trigger this workflow; publishing the GitHub release does. No dependency-version
+changes are required for these additions. Local preparation does not push a
+commit, create a tag, publish a GitHub release, or upload to PyPI.
+
+## Historical alpha-2 release preparation
+
+The following notes preserve their original release and validation context.
 
 This document records local preparation and validation for the next release.
 At review on 2026-10-20, PyPI listed 0.1.0a1. Building or editing this checkout

@@ -235,6 +235,31 @@ over a rollout. Discrete categorical and continuous tanh-squashed Gaussian
 likelihoods are implemented. Continuous entropy regularization uses the base
 normal's entropy; its default coefficient is zero.
 
+For large populations, opt in to the accelerated native path:
+
+```python
+learner = NativePPO(
+    device="cuda", accelerated=True,
+    env_copies=4, rollout_steps=32, epochs=2, minibatch_size=32,
+    population_chunk_size=256,  # Optional limit on agents resident at once
+)
+```
+
+Use `backend="batched"`, matching policy/environment devices, and
+`tensor_env_factory=TensorReach1D` to keep simulation on the GPU. This path
+reuses rollout storage and actor outputs, batches critic evaluation and random
+draws over a rollout, and trains growing networks together using fixed capacity
+and per-agent masks. It also runs on CPU. Weights and Adam state remain on the
+device throughout learning; portable CPU state is exported at generation
+boundaries. All training and evaluation chunks finish before selection.
+
+The path is experimental and remains opt-in. On the tested RTX 4060 Laptop GPU,
+the 1,024-agent, 128-by-128, four-copy case ran 1.69 times faster per complete
+generation than native CUDA and 1.48 times faster than accelerated four-thread
+CPU. Small networks often favor CPU. [Measured results](docs/accelerated_ppo_benchmarks_2026-11-05.md)
+include the full matrix, ablations, memory, growth, and profiling.
+[Benchmark commands and limitations](docs/accelerated_ppo.md) explain reproduction.
+
 ## Optional lifetime network growth
 
 Enable growth on the built-in MLP factory; `growth=None` (the default) retains
@@ -332,7 +357,8 @@ use the PettingZoo Parallel protocol with flat `Box` observations. Other spaces
 need explicit tested adapters.
 
 `backend="batched"` groups compatible MLP architectures for evaluation. Fixed-size
-learning uses population batches; growth-enabled policies learn individually.
+learning uses population batches; growth-enabled policies learn individually by
+default and use masked population batches with `NativePPO(accelerated=True)`.
 Tensor computation also runs on CPU. Omitting `tensor_env_factory` uses `GymTensorBridge`: Python simulation
 stays on CPU even if policies run on CUDA. This is labeled hybrid execution.
 Setting a device never migrates arbitrary Python simulation code. Native tensor
