@@ -74,30 +74,63 @@ class MLPAgent:
     low: np.ndarray
     high: np.ndarray
     growth: NeuralGrowth | None = None
+    layer_ids: tuple[int, ...] | None = None
+    next_layer_id: int = 0
 
-    def resize_hidden_sizes(self, hidden_sizes, rng):
-        """Resize widths, keeping overlapping genes and preserving outputs on growth.
+    def __post_init__(self):
+        if self.layer_ids is None:
+            self.layer_ids = tuple(range(len(self.hidden_sizes)))
+        if (len(self.layer_ids) != len(self.hidden_sizes) or len(set(self.layer_ids)) != len(self.layer_ids)
+                or any(isinstance(x, bool) or not isinstance(x, int) or x < 0 for x in self.layer_ids)):
+            raise ValueError('Hidden layers require unique nonnegative integer IDs')
+        self.next_layer_id = max(self.next_layer_id, max(self.layer_ids, default=-1) + 1)
+
+    def __setstate__(self, state):
+        # Older generation checkpoints predate explicit layer identities.
+        self.__dict__.update(state)
+        self.__post_init__()
+
+    def resize_hidden_sizes(self, hidden_sizes, rng, *, layer_ids=None):
+        """Resize width/depth, preserving surviving layers and the output head.
 
         New neurons have random incoming weights and zero outgoing weights into
-        existing neurons. They can learn without disrupting the existing policy.
-        Shrinking crops neurons and may change behavior. Adam moments reset on a
-        shape change; growth counters and other training state remain intact.
+        existing neurons. New layers start with an identity-shaped input matrix
+        and zero bias. Depth edits and shrinking can change behavior because of
+        tanh and changed adjacency. Any architecture edit clears Adam moments.
+        Without explicit IDs, depth edits append/remove layers at the end.
         """
         sizes = tuple(hidden_sizes)
-        if len(sizes) != len(self.hidden_sizes) or any(
-                isinstance(x, bool) or not isinstance(x, int) or x < 1 for x in sizes):
-            raise ValueError('Resize requires positive integer widths and the same number of hidden layers')
+        if any(isinstance(x, bool) or not isinstance(x, int) or x < 1 for x in sizes):
+            raise ValueError('Resize requires positive integer widths')
         if self.growth is not None:
             self.growth.validate_sizes(sizes)
-        if sizes == self.hidden_sizes:
+        if layer_ids is None:
+            retained = self.layer_ids[:len(sizes)]
+            layer_ids = retained + tuple(range(self.next_layer_id, self.next_layer_id + len(sizes) - len(retained)))
+        ids = tuple(layer_ids)
+        if len(ids) != len(sizes) or len(set(ids)) != len(ids) or any(
+                isinstance(x, bool) or not isinstance(x, int) or x < 0 for x in ids):
+            raise ValueError('Hidden layers require unique nonnegative integer IDs')
+        if sizes == self.hidden_sizes and ids == self.layer_ids:
             return False
         old = self.parameters()
+        old_positions = {identity: i for i, identity in enumerate(self.layer_ids)}
         # Compute the new layout without changing the agent until all arrays exist.
         resized = copy.copy(self)
         resized.hidden_sizes = sizes
         parts = []
         for name, shape in resized.layout():
-            source = old[name]
+            if name == 'log_std':
+                parts.append(old[name].copy())
+                continue
+            prefix, suffix = name.split('_')
+            kind, index = suffix[0], int(suffix[1:])
+            old_index = (len(self.hidden_sizes) if index == len(sizes) else old_positions.get(ids[index]))
+            if old_index is None:
+                value = np.eye(*shape, dtype=np.float32) if kind == 'w' else np.zeros(shape, np.float32)
+                parts.append(value.reshape(-1))
+                continue
+            source = old[f'{prefix}_{kind}{old_index}']
             value = np.zeros(shape, dtype=np.float32)
             overlap = tuple(slice(0, min(a, b)) for a, b in zip(shape, source.shape))
             value[overlap] = source[overlap]
@@ -107,10 +140,40 @@ class MLPAgent:
                     0, np.sqrt(1 / shape[0]), (existing_inputs, shape[1] - source.shape[1]))
             parts.append(value.reshape(-1))
         genome = VectorGenome(np.concatenate(parts))
-        self.hidden_sizes, self.genome = sizes, genome
+        self.hidden_sizes, self.genome, self.layer_ids = sizes, genome, ids
+        self.next_layer_id = max(self.next_layer_id, max(ids, default=-1) + 1)
         if hasattr(self, 'training_state'):
             self.training_state.pop('adam', None)
         return True
+
+    def insert_hidden_layer(self, index, width, rng):
+        if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index <= len(self.hidden_sizes):
+            raise ValueError('Invalid hidden-layer insertion index')
+        sizes = self.hidden_sizes[:index] + (width,) + self.hidden_sizes[index:]
+        ids = self.layer_ids[:index] + (self.next_layer_id,) + self.layer_ids[index:]
+        return self.resize_hidden_sizes(sizes, rng, layer_ids=ids)
+
+    def remove_hidden_layer(self, index, rng):
+        if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < len(self.hidden_sizes):
+            raise ValueError('Invalid hidden-layer removal index')
+        return self.resize_hidden_sizes(self.hidden_sizes[:index] + self.hidden_sizes[index + 1:], rng,
+            layer_ids=self.layer_ids[:index] + self.layer_ids[index + 1:])
+
+    def inherit_structure(self, learned, rng):
+        self.resize_hidden_sizes(learned.hidden_sizes, rng, layer_ids=learned.layer_ids)
+        self.next_layer_id = max(self.next_layer_id, learned.next_layer_id)
+
+    def named_genes(self):
+        """Parameters keyed by layer identity, with a distinct permanent readout."""
+        result = {}
+        params = self.parameters()
+        for prefix in ('actor', 'critic'):
+            for i, identity in enumerate((*self.layer_ids, 'output')):
+                for kind in ('w', 'b'):
+                    result[(prefix, kind, identity)] = params[f'{prefix}_{kind}{i}']
+        if not self.discrete:
+            result[('log_std',)] = params['log_std']
+        return result
 
     def layout(self):
         result = []
@@ -164,6 +227,7 @@ class MLPAgent:
                 "hidden_sizes": self.hidden_sizes, "action_dim": self.action_dim,
                 "discrete": self.discrete, "low": self.low.tolist(), "high": self.high.tolist(),
                 "growth": asdict(self.growth) if self.growth is not None else None}
+        spec.update(layer_ids=self.layer_ids, next_layer_id=self.next_layer_id)
         (folder / "agent.json").write_text(json.dumps(spec), encoding="utf-8")
 
 
@@ -224,7 +288,8 @@ def load_agent(path: str):
         raise ValueError("Unknown agent kind")
     return MLPAgent(genome, spec["observation_dim"], tuple(spec["hidden_sizes"]), spec["action_dim"],
                     spec["discrete"], np.array(spec["low"], np.float32), np.array(spec["high"], np.float32),
-                    NeuralGrowth(**spec["growth"]) if spec.get("growth") is not None else None)
+                    NeuralGrowth(**spec["growth"]) if spec.get("growth") is not None else None,
+                    tuple(spec['layer_ids']) if 'layer_ids' in spec else None, spec.get('next_layer_id', 0))
 
 
 def architecture_groups(agents):

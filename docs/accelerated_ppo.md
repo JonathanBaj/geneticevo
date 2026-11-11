@@ -5,6 +5,12 @@ It uses the existing PPO loss, GAE, per-agent gradient clipping, independent
 Adam, growth rules, inheritance, and generation-boundary checkpoints. The
 default `accelerated=False` path remains the reference for comparison.
 
+Variable-depth growth, lifetime pruning, mixed-depth batches, and exact resume
+passed [CUDA correctness checks on 2026-11-11](cuda_depth_validation_2026-11-11.md).
+The full suite passed 123 tests and 25 subtests with no skips; the expanded depth
+tests also check gradients, optimizer state, chunks, and hybrid continuous-action
+resume on GPU. The performance measurements below keep their original context.
+
 GPU measurements and correctness checks were completed on 2026-11-05 using an
 RTX 4060 Laptop GPU. The [measured report](accelerated_ppo_benchmarks_2026-11-05.md)
 contains the 96-configuration CPU/CUDA matrix, targeted ablations, growth,
@@ -50,27 +56,33 @@ for this path. An optional `prepare_rollout(steps)` can prefill reset randomness
   once before constructing individual CPU states.
 - Generation initialization leaves policy construction to the training chunks,
   avoiding an extra GPU policy that was built solely for validation and discarded.
-- Growing networks batch by compatible observation/action spaces and hidden
-  layer count. Each layer reserves its configured maximum width. Boolean masks
+- Growing networks batch by compatible observation/action spaces, including
+  different hidden-layer counts. Each hidden slot reserves its configured maximum width. Boolean masks
   zero inactive activations, so inactive parameters receive zero gradients.
   `growth_capacity=(128, 128)` can specify larger per-layer bounds; every bound
-  must cover the corresponding configured growth maximum and initial widths.
+  must cover reachable depth as well as each slot's configured width maximum.
+  For example, a four-layer bound can use `growth_capacity=(128, 128, 128, 128)`.
 - At each existing growth boundary, `NeuralGrowth.after_update` still chooses
   the layer and initializes new slots using the individual's growth RNG. The
-  device policy imports only new incoming connections and zero outgoing rows;
-  trained overlapping weights and parameter storage remain intact. Policy and
-  value outputs are preserved at activation. The entire Adam state of each
+  original width-only policy imports new slots without exporting the overlap.
+  Dynamic shrinking/depth edits use masked hidden slots and a separate output
+  head, selected at each member's active depth (including zero hidden layers).
+  Trained genes and moments are exported at edit boundaries; changed members
+  are cleared and reimported into the same parameter storage. Width widening
+  preserves outputs; shrinking and layer edits may change them. The Adam state of each
   changed agent resets, as on the reference path; peers retain their state.
 - Environments and observations continue across rollouts and growth boundaries.
   Training calls start fresh environments at each generation, matching the
   reference behavior. Fresh children reset training state; elites retain it.
-  Baldwinian runs inherit acquired sizes while retaining birth weights.
+  Baldwinian runs inherit acquired widths/depths and layer IDs while retaining
+  birth weights on surviving layers.
 - `population_chunk_size` bounds both training and frozen evaluation. Every
   agent receives its full rounded budget and all fitness results finish before
   selection. Chunking never subsamples agents, shortens rollouts, or reduces
   PPO epochs. It is explicit rather than an automatic OOM retry.
-- Weights and Adam remain on device across all rollouts in a training call,
-  including growth. Exports crop padded state to active shapes. Checkpoints
+- Width-only growth retains device weights and Adam across rollouts. Dynamic
+  edit boundaries also export active weights/moments to CPU for structural
+  mapping. Exports crop padded state to active shapes. Checkpoints
   contain CPU arrays/tensors using the existing schema; no CUDA handles or
   learner-owned population caches are needed to resume.
 
@@ -109,9 +121,10 @@ python benchmarks/ppo_updates.py --devices cpu cuda --populations 256 1024 --wid
 GPU correctness and existing regression checks:
 
 ```powershell
-python -m pytest -q tests/test_accelerated_ppo.py tests/test_tensor.py tests/test_growth.py tests/test_cuda.py
+python -m pytest -q tests/test_accelerated_ppo.py tests/test_depth.py tests/test_tensor.py tests/test_growth.py tests/test_cuda.py
 python examples/native_ppo.py --device cuda --accelerated --chunk-size 256
 python examples/neural_growth.py --device cuda --accelerated --inheritance baldwinian
+python examples/neural_growth.py --device cuda --dynamic-depth --accelerated --inheritance baldwinian
 ```
 
 `AcceleratedCUDA` repeats the CPU invariants on the GPU: independent gradients

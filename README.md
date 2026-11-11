@@ -20,13 +20,14 @@ Evolution, learning, communication, and GPU execution do not guarantee better
 results or general intelligence. These are research tools, not deployment safety
 guarantees.
 
-## What's new in 0.1.0a6
+## What's new in 0.1.0a7
 
-Sparse graph brains can now grow, prune, and rewire neurons and connections
-during learning and across generations. Offspring inherit the evolved topology,
-with PPO learning, save/load, and checkpoint resume support. See
-[sparse graph brains](#sparse-graph-brains) and the runnable
-[graph brain example](examples/graph_brain.py).
+MLPs can now shrink during learning and add or remove hidden layers during life
+and reproduction. Offspring inherit the resulting architecture, and accelerated
+PPO supports mixed-depth batches. See [network growth](#optional-lifetime-network-growth)
+and run `python examples/neural_growth.py --dynamic-depth --accelerated --device cpu`.
+The feature passed [CUDA validation](docs/cuda_depth_validation_2026-11-11.md),
+including exact checkpoint resume and portable saves.
 
 ## Installation
 
@@ -281,12 +282,19 @@ factory = MLPAgentFactory(
     hidden_sizes=(4, 4),
     growth=NeuralGrowth(
         check_every=32,             # Actual training transitions per individual
-        neurons_per_growth=2,       # Added to one eligible hidden layer per event
+        neurons_per_growth=2,       # Neurons added/removed in a selected width edit
         max_hidden_size=32,         # Hard cap per hidden layer
-        min_hidden_size=2,          # Lower bound for offspring size mutations
+        min_hidden_size=2,          # Lower width bound for lifetime/birth edits
         value_loss_threshold=None, # Scheduled growth; use a number to gate on value loss
         mutation_probability=0.1,   # Probability per layer at reproduction
         mutation_step=2,            # Add or remove 1..2 neurons on a mutation
+        shrink_probability=0.2,     # Lifetime width shrinking
+        layer_add_probability=0.25,
+        layer_remove_probability=0.25,
+        min_hidden_layers=0,       # Zero permits a direct linear policy
+        max_hidden_layers=4,
+        new_layer_size=4,
+        layer_mutation_probability=0.25, # Add/remove a layer at reproduction
     ),
 )
 ```
@@ -299,53 +307,77 @@ example is [examples/neural_growth.py](examples/neural_growth.py):
 python examples/neural_growth.py --device cpu
 python examples/neural_growth.py --continuous --inheritance baldwinian
 python examples/neural_growth.py --value-loss-threshold 0.5
+python examples/neural_growth.py --dynamic-depth --accelerated --device cpu
 ```
 
-During training, growth is checked after completed PPO rollouts. An eligible
-hidden layer is chosen randomly and widened in both actor and critic networks.
-Checks round up to a rollout boundary and perform at most one growth event at a
-time. Existing parameters are retained; new neurons receive random incoming
+During training, architecture edits are checked after completed PPO rollouts.
+One eligible event is selected: widen or narrow a layer, insert a hidden layer,
+or remove one. The shrink/add-layer/remove-layer probabilities must sum to at
+most one; the remaining probability selects width growth. Probabilities are
+renormalized over eligible events at the configured bounds. Checks round up to
+a rollout boundary and perform at most one event at a time, in both actor and
+critic networks. New neurons in an existing layer receive random incoming
 weights and zero outgoing weights into existing neurons, preserving the current
 policy and value outputs at the moment of growth. Later updates can learn to
 use them. The environment continues without resetting when the network grows.
-Adam moments reset after a size change; growth counters continue.
+Width shrinking crops neurons and reconnects the overlapping inputs/outputs.
+New layers can be inserted at any position, with identity-shaped incoming
+weights and zero biases. Layers can also be removed at any position. Surviving
+layers retain stable IDs, and output-head parameters retain their separate role
+when layer indices shift. Insertion adds a tanh operation; depth changes and
+shrinking can immediately change behavior. Adam moments reset for an edited
+individual; training counters and its live environment continue.
+
+The new probabilities default to zero to preserve existing width-only runs.
+`min_hidden_layers=1` and `max_hidden_layers=8` are the default depth bounds.
+Set `min_hidden_layers=0` to permit removal of every hidden layer.
 
 By default, growth is scheduled. Set `value_loss_threshold` to require the mean
 value loss across that rollout's PPO updates to meet the threshold before
-adding capacity. This is a learning-error heuristic, not a measurement of
+editing the architecture. This is a learning-error heuristic, not a measurement of
 novelty, intelligence, or a biological model. Larger networks need more memory
 and may perform worse; choose a suitable width cap.
 
-The agent's final **hidden-layer sizes** become inherited traits in both modes:
-Lamarckian offspring inherit learned weights and sizes; Baldwinian offspring
-inherit sizes while retaining the original genes in overlapping neurons and
-initializing additional capacity afresh. Each layer may then mutate up or down
-within its bounds, followed by normal parameter mutation. Lifetime growth only
-adds neurons; shrinking happens through offspring mutations. Layer count,
-observation size, and action size stay fixed. The growth settings themselves
+The agent's final **hidden-layer widths, depth, and IDs** become inherited traits
+in both modes: Lamarckian offspring inherit learned weights and architecture;
+Baldwinian offspring inherit the architecture while retaining birth genes in
+surviving layers and initializing new capacity afresh. Birth mutations can change
+widths and, with `layer_mutation_probability`, add or remove one layer before
+normal parameter mutation. Observation and action sizes stay fixed. The growth settings themselves
 are configuration, not mutated traits. Elites keep their sizes; immigrants use
 the factory's starting sizes. Fresh children reset growth and optimizer counters.
 
-Growth-enabled agents learn individually, with their environment copies still
-batched on the selected CPU/CUDA device. Frozen evaluation groups agents by
-architecture. Fixed-size agents retain population-batched learning. This avoids
-padding every policy to the maximum size, but may reduce population throughput.
-Growth and size mutations, saving/loading, archives, and generation-boundary
-resume are supported. Native and hybrid CUDA execution, growth, and resume were
-checked on the hardware listed in [CUDA validation](docs/cuda_validation.md).
+By default, growth-enabled agents learn individually, with environment copies
+batched on the selected CPU/CUDA device. `NativePPO(accelerated=True)` also batches
+different widths and depths using bounded hidden slots, masks, and a separate
+output head per individual. It exports trained genes at dynamic edit boundaries,
+then imports the edited member into the same tensors and resets only its Adam
+state. `growth_capacity`, if supplied, must cover all reachable depths and widths.
+This reserves more memory as the configured depth/width bounds increase.
+
+Saving/loading, archives, and generation-boundary resume include layer identities.
+Legacy agent saves without IDs load with sequential IDs. CPU checks cover both
+PPO paths with variable depth. The new depth/shrink behavior and graph brains
+passed [CUDA validation on 2026-11-11](docs/cuda_depth_validation_2026-11-11.md)
+on an RTX 4060 Laptop GPU, including exact checkpoint resume and portable saves.
+[Earlier CUDA validation](docs/cuda_validation.md) retains its width-growth context.
 
 Automatic lifetime growth currently supports the built-in MLP with native PPO.
 Custom MLP learners can opt in with `supports_neural_growth=True` and call
 `agent.growth.after_update(agent, interactions, value_loss, rng)` at safe update
-boundaries. SB3 policies and communicating task-policy wrappers do not support
+boundaries; the same hook now supports width shrinking and layer edits. SB3 policies and communicating task-policy wrappers do not support
 this feature. `crossover` must remain `None`. With `learner=None`, offspring size
 mutations still work, but networks do not grow during frozen evaluation.
 
 Metrics record `network_hidden_sizes`, `network_parameter_counts`, and learner
-`growth_events` (mean per trained individual per generation). Lineage records
-architecture sizes before/after each offspring mutation. Agent folders retain
-sizes and growth configuration; training counters require a full checkpoint.
-For different widths, sampled parameter distances align parameters by layer and
+`growth_events` and `hidden_layers` (mean per trained individual per generation).
+Learner metrics also separate `width_growth_events`, `width_shrink_events`,
+`layers_added`, and `layers_removed` for the current training call.
+Lineage records widths and layer IDs before/after each offspring mutation. Agent
+folders retain sizes, IDs, the next ID, and growth configuration; training counters
+require a full checkpoint. For different architectures, sampled parameter
+distances align surviving layers by identity and keep the output head separate,
+treating missing parameters as zeros. Within each matched layer, parameters align by
 neuron index, treating missing neurons as zeros.
 
 ## Sparse graph brains

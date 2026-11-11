@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geneticevo"
-version = "0.1.0a6"
+version = "0.1.0a7"
 description = "Reproducible evolutionary experiments with optional independent lifetime learning"
 readme = "README.md"
 requires-python = ">=3.10"

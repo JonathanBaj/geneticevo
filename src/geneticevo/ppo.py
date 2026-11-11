@@ -13,8 +13,9 @@ from .agents import MLPAgent, architecture_groups
 from .graph import GraphAgent
 from .core import LearnReport, seed_for
 from .learners import GenomeLearner
-from .tensor import (MaskedBatchedPolicy, IndependentRNG, RolloutRandomness,
+from .tensor import (IndependentRNG, RolloutRandomness,
                      TensorReach1D, masked_architecture_groups, make_tensor_environment, resolve_device, build_policy)
+from .tensor import DynamicBatchedPolicy, build_masked_policy, required_mlp_capacity
 
 
 @contextmanager
@@ -124,6 +125,7 @@ class IndependentAdam:
     scalar counter over stacked tensors would give children wrong corrections.
     """
     def __init__(self, policy, learning_rate=3e-4, epsilon=1e-5, agents=None, optimized=False):
+        self.policy = policy
         self.params, self.lr, self.epsilon = policy.params, learning_rate, epsilon
         self.optimized = optimized
         self.steps = torch.zeros(policy.population_size, device=policy.device)
@@ -134,12 +136,12 @@ class IndependentAdam:
                 state = getattr(agent, "training_state", {}).get("adam")
                 if state:
                     self.steps[index] = state["step"]
-                    for name in self.params:
+                    for name, (key, slices) in policy.parameter_slots(agent, index).items():
                         shape = dict(agent.layout())[name]
                         for moments, source in ((self.first, state["first"]), (self.second, state["second"])):
                             if tuple(source[name].shape) != shape:
                                 raise ValueError("Adam state shape differs from active agent parameters")
-                            moments[name][(index, *[slice(0, n) for n in shape])].copy_(source[name].to(policy.device))
+                            moments[key][slices].copy_(source[name].to(policy.device))
 
     @torch.no_grad()
     def step(self):
@@ -174,10 +176,10 @@ class IndependentAdam:
         for index, agent in enumerate(agents):
             if not hasattr(agent, 'training_state'):
                 agent.training_state = {}
-            slices = {name: (index, *[slice(0, n) for n in shape]) for name, shape in agent.layout()}
+            slices = self.policy.parameter_slots(agent, index)
             agent.training_state['adam'] = {"step": float(steps[index].cpu()),
-                "first": {name: value[slices[name]].detach().cpu().clone() for name, value in first.items()},
-                "second": {name: value[slices[name]].detach().cpu().clone() for name, value in second.items()}}
+                "first": {name: first[key][slot].detach().cpu().clone() for name, (key, slot) in slices.items()},
+                "second": {name: second[key][slot].detach().cpu().clone() for name, (key, slot) in slices.items()}}
 
 
 @dataclass(frozen=True)
@@ -272,10 +274,7 @@ class NativePPO(GenomeLearner):
         batches = []
         for group in groups:
             if self.accelerated:
-                depth = len(agents[group[0]].hidden_sizes)
-                capacity = self.growth_capacity if self.growth_capacity is not None else tuple(max(
-                    agents[i].growth.max_hidden_size if agents[i].growth else agents[i].hidden_sizes[layer]
-                    for i in group) for layer in range(depth))
+                capacity = self.growth_capacity if self.growth_capacity is not None else required_mlp_capacity([agents[i] for i in group])
                 chunk = self.population_chunk_size or len(group)
                 batches.extend((group[start:start + chunk], capacity) for start in range(0, len(group), chunk))
                 continue
@@ -301,7 +300,7 @@ class NativePPO(GenomeLearner):
         with training_phase("setup", self.device, timings):
             masked = self.accelerated and (has_growth or capacity != agents[0].hidden_sizes or
                                            any(a.hidden_sizes != agents[0].hidden_sizes for a in agents))
-            policy = (MaskedBatchedPolicy(agents, self.device, capacity) if masked else build_policy(agents, self.device))
+            policy = (build_masked_policy(agents, self.device, capacity) if masked else build_policy(agents, self.device))
             optimizer = IndependentAdam(policy, self.learning_rate, agents=agents, optimized=self.accelerated)
             rng = IndependentRNG([seed_for(seed, "actions", generation, i) for i in member_indices], self.device)
             # Separate domains keep action streams independent of shuffle work.
@@ -319,6 +318,7 @@ class NativePPO(GenomeLearner):
         rollout_count = math.ceil(budget / (self.env_copies * self.rollout_steps))
         metric_totals, updates = {}, 0
         growth_events = [0] * len(agents)
+        events_before = [dict(getattr(a, 'training_state', {}).get('neural_growth', {})) for a in agents]
         try:
             with training_phase("setup", self.device, timings):
                 observations = env.reset()
@@ -389,7 +389,7 @@ class NativePPO(GenomeLearner):
                 if has_growth:
                     with training_phase("growth", self.device, timings):
                         losses = (rollout_value_loss / rollout_updates).detach().cpu().tolist()
-                        if not self.accelerated:
+                        if not self.accelerated or isinstance(policy, DynamicBatchedPolicy):
                             policy.export(agents)
                             optimizer.export(agents)
                         changed_indices = []
@@ -422,6 +422,12 @@ class NativePPO(GenomeLearner):
                 reports[i].metrics.update(growth_events=growth_events[i],
                     hidden_neurons=agent.hidden_neurons if isinstance(agent, GraphAgent) else sum(agent.hidden_sizes),
                     parameters=agent.genome.values.size)
+                if isinstance(agent, MLPAgent):
+                    reports[i].metrics['hidden_layers'] = len(agent.hidden_sizes)
+                    state = agent.training_state['neural_growth']
+                    for source, metric in (('grow', 'width_growth_events'), ('shrink', 'width_shrink_events'),
+                                           ('add_layer', 'layers_added'), ('remove_layer', 'layers_removed')):
+                        reports[i].metrics[metric] = state.get(source, 0) - events_before[i].get(source, 0)
                 if isinstance(agent, GraphAgent):
                     reports[i].metrics['connections'] = len(agent.edges)
         return reports

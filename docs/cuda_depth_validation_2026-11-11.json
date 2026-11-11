@@ -1,0 +1,530 @@
+{
+  "validation_date": "2026-11-11",
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "compute_capability": [
+      8,
+      9
+    ],
+    "total_memory_bytes": 8585216000,
+    "nvidia_smi": "NVIDIA GeForce RTX 4060 Laptop GPU, 555.97, 8188 MiB",
+    "torch": "2.12.1+cu126",
+    "cuda_build": "12.6",
+    "python": "3.11.9",
+    "platform": "Windows-10-10.0.26300-SP0"
+  },
+  "source": {
+    "version": "0.1.0a6",
+    "installed_version": "0.1.0a2",
+    "git_head": "ebc3302bf2cdaa374ab19304b0b7714a32130874",
+    "context": "Working tree includes MLP width/depth growth, lifetime pruning, dynamic accelerated PPO, and expanded CUDA tests.",
+    "sha256": {
+      "src/geneticevo/__init__.py": "58225e4b04184d7877ccf3ea5ac806be3d3c4a98f75e3c81ecc0663aa3f1ae3c",
+      "src/geneticevo/agents.py": "21b862c3fba89fe27bdbe8f0d5c0ab1c3d345c1a217e9160526d2bda9f484690",
+      "src/geneticevo/core.py": "6cc59327672b78fd511c463ee455916280dbb6d11c141f7966ce84a93bc6e036",
+      "src/geneticevo/environments.py": "41646d7303e35c14b70c49bb50cd4fcd7cf2651ba703c31698ed7d8f750717bd",
+      "src/geneticevo/evaluation.py": "09a8605a78b77f31c1ca021a3862d13e41cf62d83e43d374a307228dcfd9d91f",
+      "src/geneticevo/evolution.py": "076650842b2415892a9822b752755e61df9338f21946e331a8f4e9f3ce7081f5",
+      "src/geneticevo/execution.py": "1008761eaccd7722220250d9ab16e653e70c80a080364fca1f663d9761ee20f2",
+      "src/geneticevo/graph.py": "75f20739d462c25126fe97955ecf07dd5bf9907e36d4836860ec7b488d75c0fc",
+      "src/geneticevo/growth.py": "9b60825fc4a25fd02eb8b149d736389d45314c499258bd0a091b868dbb2c4b34",
+      "src/geneticevo/integrations/__init__.py": "29911c7be5edcfeb929e598fefdd8a6c5fb135f713a3dee5476e85970cc30913",
+      "src/geneticevo/integrations/pettingzoo.py": "09c948169cab6f51f647358b48bae11dc5407924905f4272575a689f58b257a1",
+      "src/geneticevo/integrations/sb3.py": "e23a3044fa6f27e2252914f4f523f9bd658b814dd2edfc288f74fb9647b3f4cb",
+      "src/geneticevo/integrations_validation.py": "c88084528a815e24d37168a83238dd4106e09d257b13def423faeb394d8eea12",
+      "src/geneticevo/learners.py": "dded3c822119a0a43f2fe33f01339ecd05cc0b4d34d990d9c7a9edbf8d2bc2bc",
+      "src/geneticevo/plotting.py": "4956f09c1c0462389b768c74a70f73e0851c224203145da74805865c0ef1310a",
+      "src/geneticevo/ppo.py": "356c7f77c4ca63365422084578c5eb130adfdce9e7e4882c5188e90e631bb6e0",
+      "src/geneticevo/results.py": "526558b6deab741e4dab516a1b528ffa0a04c69f52f3cdd911b06136b4a5a7e4",
+      "src/geneticevo/runner.py": "9eb569f554d7de7ddaca9b20d6960d578c37f1a6133d3cbb5a3502c3b35a5713",
+      "src/geneticevo/shared.py": "6f93475d94598b88cce9f617acf814e0bb5c2868992c83746399968951cf2fe8",
+      "src/geneticevo/tensor.py": "28ca39a318cacabda5c8b9689cd1a805540427ac66f9bcd2a6b00ddfe456a432",
+      "tests/test_accelerated_ppo.py": "2bfd3dd74acd11e838cef95cc175611b07580c940fac0bdf91fce7939b5588f1",
+      "tests/test_core.py": "1a9a1d483020b97a1826063125dedaa56c26eb67dad9e1fc1fd4c25135797e23",
+      "tests/test_cuda.py": "97aec2fe16ab18ad6e24769c63bf469be6867ce2799b06b06d42c9273482b09d",
+      "tests/test_depth.py": "be11f5ed47ea0067b4b6c1be80e84b0cf58e8f2c3865b8bcfc9477f3cf2fe80f",
+      "tests/test_graph.py": "a2bb975d0a7fa3526350d04b92cc492159ea9a6bc495e38ac9ecd3e19d09857d",
+      "tests/test_growth.py": "e7e9977578ce459fcd5bbd6c89d851af57835807c385cff8aa86a8818fdf43fe",
+      "tests/test_learning.py": "616a6849d643a62384355fae4a7edd0835175fb91189360c52b819aba32f1c16",
+      "tests/test_parallel.py": "7f53abfb4c04f6e6a659f26a64f3609452678a1322ba3b8dfc2c00b95843b3ae",
+      "tests/test_pettingzoo.py": "dbcce78ca2c9c0089f5b9a2a6b3bdf3e0223c58062a113037d2e44df03caf838",
+      "tests/test_shared.py": "267f50d08d39b2e4e15c602440875e1b1567c1ea258e3387e6401dbd95fedd04",
+      "tests/test_tensor.py": "09cffff97809bc8007eb4835d2cdf6426a0a94694ada2066565857e86784fd5b"
+    }
+  },
+  "initial_full_suite": {
+    "passed": 113,
+    "subtests_passed": 21,
+    "tests": 134,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "time": 59.749
+  },
+  "expanded_depth_suite": {
+    "passed": 26,
+    "subtests_passed": 4,
+    "tests": 30,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "time": 35.058
+  },
+  "core_only_depth_suite": {
+    "passed": 7,
+    "skipped": 19,
+    "failures": 0,
+    "errors": 0
+  },
+  "examples": [
+    {
+      "name": "depth_reference_discrete",
+      "script": "neural_growth.py",
+      "arguments": [
+        "--device",
+        "cuda",
+        "--dynamic-depth"
+      ],
+      "returncode": 0,
+      "seconds": 12.779,
+      "stdout": "Generation 0: hidden sizes=[[4, 4], [4, 2, 4], [8, 4], [2, 6]], mean growth events=2.00\nGeneration 1: hidden sizes=[[6, 4], [6, 2, 2], [1, 8], [10]], mean growth events=2.00\nGeneration 2: hidden sizes=[[3], [4], [4, 1, 4], [6]], mean growth events=2.00\nChampion hidden sizes=(2, 6); fitness=-1.6845\n",
+      "stderr": "",
+      "structural_events": {
+        "width_growth_events": 8.0,
+        "width_shrink_events": 7.0,
+        "layers_added": 4.0,
+        "layers_removed": 5.0
+      },
+      "network_hidden_sizes": [
+        [
+          [
+            4,
+            4
+          ],
+          [
+            4,
+            2,
+            4
+          ],
+          [
+            8,
+            4
+          ],
+          [
+            2,
+            6
+          ]
+        ],
+        [
+          [
+            6,
+            4
+          ],
+          [
+            6,
+            2,
+            2
+          ],
+          [
+            1,
+            8
+          ],
+          [
+            10
+          ]
+        ],
+        [
+          [
+            3
+          ],
+          [
+            4
+          ],
+          [
+            4,
+            1,
+            4
+          ],
+          [
+            6
+          ]
+        ]
+      ],
+      "portable_cpu_champion_fitness": -0.3831285536289215
+    },
+    {
+      "name": "depth_reference_continuous_baldwinian",
+      "script": "neural_growth.py",
+      "arguments": [
+        "--device",
+        "cuda",
+        "--dynamic-depth",
+        "--continuous",
+        "--inheritance",
+        "baldwinian"
+      ],
+      "returncode": 0,
+      "seconds": 13.049,
+      "stdout": "Generation 0: hidden sizes=[[4, 4], [4, 2, 4], [8, 4], [2, 6]], mean growth events=2.00\nGeneration 1: hidden sizes=[[2, 4, 4], [6, 2], [2, 2, 6], [6, 4]], mean growth events=2.00\nGeneration 2: hidden sizes=[[2, 4], [2, 6], [4, 2, 2, 6], [1]], mean growth events=2.00\nChampion hidden sizes=(2, 6); fitness=-13.3615\n",
+      "stderr": "",
+      "structural_events": {
+        "width_growth_events": 10.0,
+        "width_shrink_events": 7.0,
+        "layers_added": 3.0,
+        "layers_removed": 4.0
+      },
+      "network_hidden_sizes": [
+        [
+          [
+            4,
+            4
+          ],
+          [
+            4,
+            2,
+            4
+          ],
+          [
+            8,
+            4
+          ],
+          [
+            2,
+            6
+          ]
+        ],
+        [
+          [
+            2,
+            4,
+            4
+          ],
+          [
+            6,
+            2
+          ],
+          [
+            2,
+            2,
+            6
+          ],
+          [
+            6,
+            4
+          ]
+        ],
+        [
+          [
+            2,
+            4
+          ],
+          [
+            2,
+            6
+          ],
+          [
+            4,
+            2,
+            2,
+            6
+          ],
+          [
+            1
+          ]
+        ]
+      ],
+      "portable_cpu_champion_fitness": -0.8351339399814606
+    },
+    {
+      "name": "depth_accelerated_discrete_chunked",
+      "script": "neural_growth.py",
+      "arguments": [
+        "--device",
+        "cuda",
+        "--dynamic-depth",
+        "--accelerated",
+        "--chunk-size",
+        "2"
+      ],
+      "returncode": 0,
+      "seconds": 10.522,
+      "stdout": "Generation 0: hidden sizes=[[4, 4], [4, 2, 4], [8, 4], [2, 6]], mean growth events=2.00\nGeneration 1: hidden sizes=[[4, 8], [8, 4], [3, 6, 8], [8]], mean growth events=2.00\nGeneration 2: hidden sizes=[[6], [3, 4, 10], [4, 4, 4, 8], [3]], mean growth events=2.00\nChampion hidden sizes=(4, 8); fitness=-1.6672\n",
+      "stderr": "",
+      "structural_events": {
+        "width_growth_events": 10.0,
+        "width_shrink_events": 7.0,
+        "layers_added": 4.0,
+        "layers_removed": 3.0
+      },
+      "network_hidden_sizes": [
+        [
+          [
+            4,
+            4
+          ],
+          [
+            4,
+            2,
+            4
+          ],
+          [
+            8,
+            4
+          ],
+          [
+            2,
+            6
+          ]
+        ],
+        [
+          [
+            4,
+            8
+          ],
+          [
+            8,
+            4
+          ],
+          [
+            3,
+            6,
+            8
+          ],
+          [
+            8
+          ]
+        ],
+        [
+          [
+            6
+          ],
+          [
+            3,
+            4,
+            10
+          ],
+          [
+            4,
+            4,
+            4,
+            8
+          ],
+          [
+            3
+          ]
+        ]
+      ],
+      "portable_cpu_champion_fitness": -0.3831285536289215
+    },
+    {
+      "name": "depth_accelerated_continuous_baldwinian_chunked",
+      "script": "neural_growth.py",
+      "arguments": [
+        "--device",
+        "cuda",
+        "--dynamic-depth",
+        "--accelerated",
+        "--chunk-size",
+        "2",
+        "--continuous",
+        "--inheritance",
+        "baldwinian"
+      ],
+      "returncode": 0,
+      "seconds": 10.452,
+      "stdout": "Generation 0: hidden sizes=[[4, 4], [4, 2, 4], [8, 4], [2, 6]], mean growth events=2.00\nGeneration 1: hidden sizes=[[6, 2, 2], [4, 4], [4, 6, 2, 4], [4]], mean growth events=2.00\nGeneration 2: hidden sizes=[[6, 4], [4, 4, 4, 4], [4, 8, 2], [4]], mean growth events=2.00\nChampion hidden sizes=(4, 2, 4); fitness=-13.7465\n",
+      "stderr": "",
+      "structural_events": {
+        "width_growth_events": 10.0,
+        "width_shrink_events": 7.0,
+        "layers_added": 3.0,
+        "layers_removed": 4.0
+      },
+      "network_hidden_sizes": [
+        [
+          [
+            4,
+            4
+          ],
+          [
+            4,
+            2,
+            4
+          ],
+          [
+            8,
+            4
+          ],
+          [
+            2,
+            6
+          ]
+        ],
+        [
+          [
+            6,
+            2,
+            2
+          ],
+          [
+            4,
+            4
+          ],
+          [
+            4,
+            6,
+            2,
+            4
+          ],
+          [
+            4
+          ]
+        ],
+        [
+          [
+            6,
+            4
+          ],
+          [
+            4,
+            4,
+            4,
+            4
+          ],
+          [
+            4,
+            8,
+            2
+          ],
+          [
+            4
+          ]
+        ]
+      ],
+      "portable_cpu_champion_fitness": -0.8380584120750427
+    },
+    {
+      "name": "graph_discrete",
+      "script": "graph_brain.py",
+      "arguments": [
+        "--device",
+        "cuda"
+      ],
+      "returncode": 0,
+      "seconds": 18.677,
+      "stdout": "Generation 0: neurons=[12, 15, 14, 13], connections=[21, 30, 22, 30], fitness=-34.254\nGeneration 1: neurons=[15, 14, 17, 14], connections=[33, 21, 35, 35], fitness=-67.528\nGeneration 2: neurons=[18, 17, 17, 18], connections=[37, 37, 45, 41], fitness=-0.638\nChampion saved; fitness=-1.6845\n",
+      "stderr": "",
+      "network_neuron_counts": [
+        [
+          12,
+          15,
+          14,
+          13
+        ],
+        [
+          15,
+          14,
+          17,
+          14
+        ],
+        [
+          18,
+          17,
+          17,
+          18
+        ]
+      ],
+      "network_connection_counts": [
+        [
+          21,
+          30,
+          22,
+          30
+        ],
+        [
+          33,
+          21,
+          35,
+          35
+        ],
+        [
+          37,
+          37,
+          45,
+          41
+        ]
+      ],
+      "portable_cpu_champion_fitness": -0.3831285536289215
+    },
+    {
+      "name": "graph_continuous_baldwinian",
+      "script": "graph_brain.py",
+      "arguments": [
+        "--device",
+        "cuda",
+        "--continuous",
+        "--inheritance",
+        "baldwinian"
+      ],
+      "returncode": 0,
+      "seconds": 16.081,
+      "stdout": "Generation 0: neurons=[10, 13, 12, 11], connections=[22, 30, 22, 30], fitness=-5.011\nGeneration 1: neurons=[11, 13, 11, 11], connections=[28, 21, 21, 23], fitness=-24.106\nGeneration 2: neurons=[14, 11, 12, 10], connections=[34, 20, 34, 18], fitness=-8.774\nChampion saved; fitness=-21.2858\n",
+      "stderr": "",
+      "network_neuron_counts": [
+        [
+          10,
+          13,
+          12,
+          11
+        ],
+        [
+          11,
+          13,
+          11,
+          11
+        ],
+        [
+          14,
+          11,
+          12,
+          10
+        ]
+      ],
+      "network_connection_counts": [
+        [
+          22,
+          30,
+          22,
+          30
+        ],
+        [
+          28,
+          21,
+          21,
+          23
+        ],
+        [
+          34,
+          20,
+          34,
+          18
+        ]
+      ],
+      "portable_cpu_champion_fitness": -0.8979901969432831
+    }
+  ],
+  "warning": "SB3 emits its expected MLP PPO GPU performance warning; it is not a failure.",
+  "scope": "Correctness validation on this device/software combination; not a new performance benchmark or cross-device bitwise identity guarantee.",
+  "final_full_suite": {
+    "passed": 123,
+    "subtests_passed": 25,
+    "tests": 148,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 71.927,
+    "command": "python -m pytest -q -ra --junitxml=results/gpu_validation_2026-11-11/final-suite.xml"
+  },
+  "implementation_fixes_needed": false,
+  "additional_test_coverage": "DepthCUDA repeats variable-depth PPO invariants on GPU and adds exact hybrid continuous-action checkpoint resume for both PPO paths and inheritance modes."
+}

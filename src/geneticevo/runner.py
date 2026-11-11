@@ -159,7 +159,7 @@ class Evolution:
                 if isinstance(agent, MLPAgent) and isinstance(initial, MLPAgent) and agent.growth is not None:
                     if agent.growth != initial.growth:
                         raise ValueError('Initial NeuralGrowth configuration does not match')
-                    agent.resize_hidden_sizes(initial.hidden_sizes,
+                    agent.inherit_structure(initial,
                         np.random.default_rng(seed_for(self.config.seed, 'growth', index)))
                 if type(initial) is not type(agent) or initial.genome.vector().shape != agent.genome.vector().shape:
                     raise ValueError("Initial checkpoint agent is incompatible with the configured factory")
@@ -236,9 +236,9 @@ class Evolution:
                     inherited.inherit_structure(learned,
                         np.random.default_rng(seed_for(self.config.seed, 'growth', generation, index, 1)))
                 if isinstance(inherited, MLPAgent) and inherited.growth is not None:
-                    # The acquired size is heritable even when learned weights are
-                    # discarded. Preserve birth genes in the overlapping subnetwork.
-                    inherited.resize_hidden_sizes(learned.hidden_sizes,
+                    # Inherit widths/depth/IDs while retaining surviving birth
+                    # genes, regardless of changed layer positions.
+                    inherited.inherit_structure(learned,
                         np.random.default_rng(seed_for(self.config.seed, 'growth', generation, index, 1)))
         return agents, reports
 
@@ -263,6 +263,7 @@ class Evolution:
         self.archive = []
         for candidate in candidates:
             if not any(getattr(candidate.agent, "hidden_sizes", None) == getattr(x.agent, "hidden_sizes", None) and
+                       getattr(candidate.agent, 'layer_ids', None) == getattr(x.agent, 'layer_ids', None) and
                        getattr(candidate.agent, 'structure', None) == getattr(x.agent, 'structure', None) and
                        np.array_equal(candidate.agent.genome.vector(), x.agent.genome.vector()) for x in self.archive):
                 self.archive.append(candidate)

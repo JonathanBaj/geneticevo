@@ -8,4 +8,4 @@ from .graph import GraphAgent, GraphAgentFactory, GraphGrowth
 
 __all__ = ["Evolution", "EvolutionConfig", "GaussianMutation", "Evaluation", "Scenario",
            "VectorGenome", "LearnReport", "load_agent", "NeuralGrowth", "GraphAgent", "GraphAgentFactory", "GraphGrowth"]
-__version__ = "0.1.0a6"
+__version__ = "0.1.0a7"

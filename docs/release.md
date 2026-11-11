@@ -1,4 +1,61 @@
-# Alpha release preparation: geneticevo 0.1.0a6
+# Alpha release preparation: geneticevo 0.1.0a7
+
+Prepared locally on 2026-11-11. Both `pyproject.toml` and
+`src/geneticevo/__init__.py` declare `0.1.0a7`. Use the matching GitHub tag
+`v0.1.0a7` and mark the GitHub release as a prerelease.
+
+Short GitHub release description:
+
+> Adds MLP lifetime shrinking and hidden-layer addition/removal, inherited architectures, and mixed-depth accelerated PPO. Includes CUDA-validated learning and checkpoint resume, expanded tests, and updated examples.
+
+## Changes in alpha 7
+
+- `NeuralGrowth` can narrow hidden layers and add/remove layers during lifetime
+  learning. Offspring mutations can also change depth within configurable bounds,
+  including zero hidden layers. New probabilities default to zero to preserve
+  existing width-only runs.
+- Stable layer IDs preserve surviving genes and keep output-head parameters
+  separate when indices shift. Both inheritance modes retain acquired widths,
+  depths, and IDs; Baldwinian inheritance retains surviving birth weights.
+- Accelerated PPO batches mixed depths with bounded hidden slots, masks, and
+  separate output heads. Structural edits preserve parameter storage and live
+  environments, resetting only the edited individual's optimizer state.
+- Save/load, initial agents, archives, diversity metrics, lineage, and checkpoint
+  resume support changing depth. Custom opt-in learners use the same updated
+  `after_update` hook. SB3, communicating wrappers, and crossover retain their
+  existing restrictions.
+- `examples/neural_growth.py --dynamic-depth` demonstrates the feature with
+  regular or accelerated PPO. New CPU/CUDA tests and documentation cover it.
+
+## Validation
+
+Before this metadata-only version bump, the complete suite passed **123 tests
+and 25 subtests**, with **zero failures, errors, or skips**, on the RTX 4060 Laptop
+GPU. All six CUDA example variants passed and their saved champions ran on CPU.
+Checks include mixed-depth gradients/Adam, lifetime growth/pruning, native/hybrid
+environments, both inheritance modes, and exact checkpoint resume. See the
+[CUDA report](cuda_depth_validation_2026-11-11.md) and its JSON source hashes.
+That report retains the measured `0.1.0a6` working-tree version; historical
+validation and benchmark metadata is not relabeled for alpha 7.
+
+## Build and publish alpha 7
+
+```powershell
+python -m build --no-isolation --outdir dist/0.1.0a7
+python -m twine check --strict dist/0.1.0a7/*
+```
+
+Commit and push all feature and release changes, including `tests/test_depth.py`
+and both `docs/cuda_depth_validation_2026-11-11.*` reports. Build outputs,
+virtual environments, and `results/` are ignored. Publish a GitHub prerelease
+tagged `v0.1.0a7` at the updated commit. The existing release workflow verifies
+both version declarations, tests/builds the tagged source, and publishes to PyPI
+through the configured Trusted Publisher and `pypi` environment. Publishing the
+GitHub release triggers the workflow; a push or tag alone does not. The uploaded
+README metadata supplies the PyPI project-page description. No dependency or
+workflow changes are required.
+
+## Historical alpha-6 release preparation
 
 Prepared locally on 2026-11-11. Both `pyproject.toml` and
 `src/geneticevo/__init__.py` declare `0.1.0a6`. Use the matching GitHub tag

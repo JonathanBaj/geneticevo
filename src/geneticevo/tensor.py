@@ -115,7 +115,13 @@ class BatchedPolicy(nn.Module):
     def export(self, agents):
         arrays = {key: value.detach().cpu().numpy() for key, value in self.params.items()}
         for index, agent in enumerate(agents):
-            agent.genome.assign(np.concatenate([arrays[key][index].reshape(-1) for key, _ in agent.layout()]))
+            slots = self.parameter_slots(agent, index)
+            agent.genome.assign(np.concatenate([arrays[slots[key][0]][slots[key][1]].reshape(-1)
+                                                for key, _ in agent.layout()]))
+
+    def parameter_slots(self, agent, index):
+        """Map portable active parameter names to padded tensor storage."""
+        return {name: (name, (index, *[slice(0, n) for n in shape])) for name, shape in agent.layout()}
 
 
 class GraphBatchedPolicy(BatchedPolicy):
@@ -236,6 +242,98 @@ class MaskedBatchedPolicy(BatchedPolicy):
         for index, agent in enumerate(agents):
             agent.genome.assign(np.concatenate([arrays[key][(index, *[slice(0, n) for n in shape])].reshape(-1)
                                                 for key, shape in agent.layout()]))
+
+
+def required_mlp_capacity(agents):
+    """Cover reachable depth and widths for a bounded training/evaluation batch."""
+    depths = [max(len(a.hidden_sizes), a.growth.max_hidden_layers
+                  if a.growth and (a.growth.layer_add_probability or a.growth.layer_mutation_probability) else 0)
+              for a in agents]
+    return tuple(max(a.growth.max_hidden_size if a.growth and layer < depth else
+                     a.hidden_sizes[layer] if layer < len(a.hidden_sizes) else 1
+                     for a, depth in zip(agents, depths)) for layer in range(max(depths)))
+
+
+class DynamicBatchedPolicy(BatchedPolicy):
+    """Masked hidden slots plus a separate output head for each individual.
+
+    Members select their readout at their own active depth, including depth zero.
+    Padding has zero gradients. Depth changes import just one member into the
+    same fixed tensors; peers' weights/moments and live environments stay intact.
+    """
+    def __init__(self, agents, device='cpu', capacity=None):
+        nn.Module.__init__(self)
+        if len(masked_architecture_groups(agents)) != 1:
+            raise ValueError('Dynamic policies require matching spaces and action bounds')
+        required = required_mlp_capacity(agents)
+        capacity = required if capacity is None else tuple(capacity)
+        if len(capacity) < len(required) or any(isinstance(c, bool) or not isinstance(c, int) or c < 1
+                for c in capacity) or any(c < r for c, r in zip(capacity, required)):
+            raise ValueError('growth_capacity must cover reachable hidden depth and widths')
+        first = agents[0]
+        self.device = resolve_device(device)
+        self.population_size, self.hidden_sizes = len(agents), capacity
+        self.observation_dim, self.action_dim, self.discrete = first.observation_dim, first.action_dim, first.discrete
+        self.feature_size = max((self.observation_dim, *capacity))
+        layout = {}
+        for prefix, output in (('actor', self.action_dim), ('critic', 1)):
+            for layer, (left, right) in enumerate(zip((self.observation_dim, *capacity), capacity)):
+                layout[f'{prefix}_w{layer}'] = (left, right)
+                layout[f'{prefix}_b{layer}'] = (right,)
+            layout[f'{prefix}_out_w'] = (self.feature_size, output)
+            layout[f'{prefix}_out_b'] = (output,)
+        if not self.discrete:
+            layout['log_std'] = (self.action_dim,)
+        self.params = nn.ParameterDict({name: nn.Parameter(torch.zeros((len(agents), *shape), device=self.device))
+                                        for name, shape in layout.items()})
+        self.register_buffer('low', torch.tensor(first.low, device=self.device))
+        self.register_buffer('high', torch.tensor(first.high, device=self.device))
+        self.register_buffer('depths', torch.zeros(len(agents), dtype=torch.long, device=self.device))
+        for layer, width in enumerate(capacity):
+            self.register_buffer(f'mask_{layer}', torch.zeros((len(agents), 1, width), device=self.device))
+        for index, agent in enumerate(agents):
+            self.activate(index, agent, None)
+
+    def parameter_slots(self, agent, index):
+        slots = {}
+        for name, shape in agent.layout():
+            key = name
+            if name != 'log_std':
+                prefix, suffix = name.split('_')
+                if int(suffix[1:]) == len(agent.hidden_sizes):
+                    key = f'{prefix}_out_{suffix[0]}'
+            slots[name] = (key, (index, *[slice(0, n) for n in shape]))
+        return slots
+
+    @torch.no_grad()
+    def activate(self, index, agent, previous_sizes):
+        for parameter in self.params.values():
+            parameter[index].zero_()
+        slots = self.parameter_slots(agent, index)
+        for name, value in agent.parameters().items():
+            key, slices = slots[name]
+            self.params[key][slices].copy_(torch.as_tensor(value.copy(), device=self.device))
+        self.depths[index] = len(agent.hidden_sizes)
+        for layer, capacity in enumerate(self.hidden_sizes):
+            width = agent.hidden_sizes[layer] if layer < len(agent.hidden_sizes) else 0
+            getattr(self, f'mask_{layer}')[index, 0].copy_(torch.arange(capacity, device=self.device) < width)
+
+    def forward(self, observations, prefix='actor'):
+        value = observations
+        selected = F.pad(observations, (0, self.feature_size - self.observation_dim))
+        for layer, width in enumerate(self.hidden_sizes):
+            value = torch.tanh(torch.bmm(value, self.params[f'{prefix}_w{layer}']) +
+                               self.params[f'{prefix}_b{layer}'][:, None, :]) * getattr(self, f'mask_{layer}')
+            selected = torch.where((self.depths == layer + 1)[:, None, None],
+                F.pad(value, (0, self.feature_size - width)), selected)
+        return torch.bmm(selected, self.params[f'{prefix}_out_w']) + self.params[f'{prefix}_out_b'][:, None, :]
+
+
+def build_masked_policy(agents, device='cpu', capacity=None):
+    dynamic = (len({len(a.hidden_sizes) for a in agents}) > 1 or
+               (capacity is not None and len(capacity) != len(agents[0].hidden_sizes)) or
+               any(a.growth and a.growth.dynamic_architecture for a in agents))
+    return (DynamicBatchedPolicy(agents, device, capacity) if dynamic else MaskedBatchedPolicy(agents, device, capacity))
 
 
 class RolloutRandomness:
@@ -441,7 +539,7 @@ def evaluate_batched(agents, scenarios, env_factory, tensor_env_factory=None, de
             for i, score in zip(indices, scores):
                 evaluations[i] = score
         return evaluations
-    policy = MaskedBatchedPolicy(agents, device, growth_capacity) if masked else build_policy(agents, device)
+    policy = build_masked_policy(agents, device, growth_capacity) if masked else build_policy(agents, device)
     returns, lengths = [], []
     for start in range(0, len(scenarios), env_copies):
         chunk = scenarios[start:start + env_copies]
@@ -472,12 +570,12 @@ def evaluate_batched(agents, scenarios, env_factory, tensor_env_factory=None, de
 
 
 def masked_architecture_groups(agents):
-    """Compatible spaces and depth; active hidden widths may differ."""
+    """Compatible spaces; active hidden width and depth may differ."""
     if not agents or any(not isinstance(agent, MLPAgent) for agent in agents):
         raise ValueError("Batched policies require MLPAgentFactory agents")
     groups = {}
     for i, agent in enumerate(agents):
-        key = (agent.observation_dim, len(agent.hidden_sizes), agent.action_dim, agent.discrete,
+        key = (agent.observation_dim, agent.action_dim, agent.discrete,
                tuple(agent.low), tuple(agent.high))
         groups.setdefault(key, []).append(i)
     return list(groups.values())

@@ -199,7 +199,7 @@ class GrowthTests(unittest.TestCase):
         for interactions in (0, -1, True, 1.5):
             with self.assertRaisesRegex(ValueError, 'interaction count'):
                 agent.growth.after_update(agent, interactions, 1.0, np.random.default_rng(1))
-        for sizes in ((2, 3), (0,), (1.5,), (129,)):
+        for sizes in ((2,) * 9, (0,), (1.5,), (129,)):
             with self.assertRaises(ValueError):
                 agent.resize_hidden_sizes(sizes, np.random.default_rng(1))
         with self.assertRaisesRegex(ValueError, 'crossover=None'):

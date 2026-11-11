@@ -54,10 +54,10 @@ def parameter_distance(left, right):
             return result
         a, b = genes(left), genes(right)
         return float(np.sqrt(sum((a.get(key, 0) - b.get(key, 0)) ** 2 for key in a.keys() | b.keys())))
-    if isinstance(left, MLPAgent) and isinstance(right, MLPAgent) and left.layout() != right.layout():
-        first, second = left.parameters(), right.parameters()
+    if isinstance(left, MLPAgent) and isinstance(right, MLPAgent) and (left.layout() != right.layout() or left.layer_ids != right.layer_ids):
+        first, second = left.named_genes(), right.named_genes()
         squared = 0.0
-        for name in sorted(first.keys() | second.keys()):
+        for name in sorted(first.keys() | second.keys(), key=str):
             a, b = first.get(name), second.get(name)
             if a is None or b is None:
                 squared += float(np.square(b if a is None else a, dtype=np.float64).sum())

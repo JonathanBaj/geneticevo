@@ -60,21 +60,31 @@ Crossover hooks accept cloned parent genomes and an RNG and return a compatible
 genome. There is no implicit neural parameter averaging.
 
 The included parameter layout uses separate actor and critic tanh MLPs.
-`MLPAgentFactory(growth=NeuralGrowth(...))` optionally enables bounded width
-growth and size mutations. Architecture lives on `MLPAgent.hidden_sizes`; the
+`MLPAgentFactory(growth=NeuralGrowth(...))` optionally enables bounded width/depth
+edits during life and at reproduction. Architecture lives on `hidden_sizes`,
+`layer_ids`, and the monotonic `next_layer_id`; the
 parameter vector reflects its current layout. `resize_hidden_sizes` preserves
 overlapping genes, initializes new incoming connections randomly, and zeroes
 new outgoing connections into old neurons so widening preserves actor/critic
-outputs. Removing neurons crops their connections. Shapes change atomically;
+outputs. `insert_hidden_layer` and `remove_hidden_layer` edit any position;
+`resize_hidden_sizes` appends/removes trailing layers by default and also accepts
+explicit IDs. Output parameters map to a permanent output role, rather than an
+old numeric index. New layers use identity-shaped input matrices and zero bias;
+the extra tanh and changed adjacency can change outputs. Removing neurons crops
+their connections. Shapes change atomically;
 incompatible Adam state is discarded, while growth counters are retained.
 
 Native PPO checks growth at completed rollout/update boundaries without resetting
 environments. The default path trains growing agents individually and rebuilds
 policy/optimizer tensors at growth. Fixed-size agents use architecture groups.
-The opt-in accelerated path groups by spaces and depth, allocates one bounded
-capacity per layer, and masks each individual's active hidden prefix. Growth
-copies only newly initialized slots and clears only that individual's Adam
-moments and step counter. Existing device weights remain in place. Portable
+The opt-in accelerated path groups by spaces. Width-only configurations retain
+the original masked implementation. Dynamic configurations and mixed-depth
+groups allocate bounded hidden slots plus a separate output head. Each member
+selects the hidden activation at its own depth (or the observation at depth zero)
+for the readout; inactive slots have zero gradients. Dynamic edit boundaries export
+learned weights/moments before editing CPU genes, clear and import only changed
+members, and reset only their Adam moments/step counters. Peer state and parameter
+objects remain in place. Portable
 exports crop parameters and moments to active shapes; generation checkpoints
 retain the existing CPU schema.
 
@@ -89,12 +99,13 @@ schedules are required for reproducibility; CPU/CUDA bitwise equivalence is not
 promised. Evaluation preserves original population order and can also be chunked.
 All chunks complete before selection. See [accelerated PPO](accelerated_ppo.md).
 
-Acquired widths are inherited in both weight-inheritance modes. Baldwinian
-inheritance expands the original genome with fresh, disconnected neurons rather
-than copying learned weights. Fresh offspring mutate widths before scalar
-parameter mutations; hidden layer count stays fixed. Architecture mutations
-appear in lineage; generation metrics include widths/counts. Agent save files
-optionally include growth configuration without changing schema 1. Checkpoints
+Acquired widths, depths, and layer identities are inherited in both modes.
+Baldwinian inheritance keeps birth genes on surviving layers and initializes
+new capacity without copying learned weights. Fresh offspring mutate widths and
+optionally depth before scalar parameter mutation. Architecture mutations appear
+in lineage; generation metrics include widths/counts and learner `hidden_layers`.
+Agent save files include growth configuration, layer IDs and the next ID without
+changing schema 1. Legacy files/checkpoints receive sequential layer IDs. Checkpoints
 retain architecture and per-individual counters/RNG state. Custom crossover is
 currently rejected for growth-enabled agents. No network or optimizer state is
 shared between individuals.

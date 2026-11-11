@@ -18,13 +18,18 @@ if __name__ == '__main__':
     parser.add_argument('--continuous', action='store_true')
     parser.add_argument('--accelerated', action='store_true')
     parser.add_argument('--chunk-size', type=int)
+    parser.add_argument('--dynamic-depth', action='store_true',
+                        help='Enable lifetime shrinking and hidden-layer addition/removal')
     parser.add_argument('--value-loss-threshold', type=float, default=None,
                         help='Only grow when mean PPO value loss meets this threshold')
     args = parser.parse_args()
     torch.set_num_threads(1)
+    structural = (dict(shrink_probability=0.2, layer_add_probability=0.25, layer_remove_probability=0.25,
+                       layer_mutation_probability=0.25, min_hidden_layers=0, max_hidden_layers=4,
+                       new_layer_size=4) if args.dynamic_depth else {})
     growth = NeuralGrowth(check_every=32, neurons_per_growth=2, max_hidden_size=16,
                           value_loss_threshold=args.value_loss_threshold,
-                          mutation_probability=0.25, mutation_step=2)
+                          mutation_probability=0.25, mutation_step=2, **structural)
     result = Evolution(
         env_factory=partial(Reach1D, continuous=args.continuous),
         tensor_env_factory=partial(TensorReach1D, continuous=args.continuous),
