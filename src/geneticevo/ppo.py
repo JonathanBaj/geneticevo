@@ -10,10 +10,11 @@ import numpy as np
 import torch
 
 from .agents import MLPAgent, architecture_groups
+from .graph import GraphAgent
 from .core import LearnReport, seed_for
 from .learners import GenomeLearner
-from .tensor import (BatchedPolicy, MaskedBatchedPolicy, IndependentRNG, RolloutRandomness,
-                     TensorReach1D, masked_architecture_groups, make_tensor_environment, resolve_device)
+from .tensor import (MaskedBatchedPolicy, IndependentRNG, RolloutRandomness,
+                     TensorReach1D, masked_architecture_groups, make_tensor_environment, resolve_device, build_policy)
 
 
 @contextmanager
@@ -182,6 +183,7 @@ class IndependentAdam:
 @dataclass(frozen=True)
 class NativePPO(GenomeLearner):
     supports_neural_growth = True
+    supports_graph_growth = True
 
     env_copies: int = 1
     rollout_steps: int = 32
@@ -227,8 +229,10 @@ class NativePPO(GenomeLearner):
         resolve_device(self.device)
 
     def validate(self, agent, env_factory, backend):
-        if not isinstance(agent, MLPAgent) or backend != "batched":
-            raise ValueError("NativePPO requires MLPAgentFactory and backend='batched'")
+        if not isinstance(agent, (MLPAgent, GraphAgent)) or backend != "batched":
+            raise ValueError("NativePPO requires MLPAgentFactory or GraphAgentFactory and backend='batched'")
+        if isinstance(agent, GraphAgent) and self.accelerated:
+            raise ValueError("Graph brains require NativePPO(accelerated=False); CPU and CUDA are supported")
         from .agents import validate_spaces
         env = env_factory()
         try:
@@ -247,8 +251,8 @@ class NativePPO(GenomeLearner):
             env.close()
 
     def prepare(self, agent, seed):
-        if not isinstance(agent, MLPAgent):
-            raise ValueError("NativePPO requires MLPAgent")
+        if not isinstance(agent, (MLPAgent, GraphAgent)):
+            raise ValueError("NativePPO requires MLPAgent or GraphAgent")
 
     def learn(self, agent, env_factory, budget, environment_seed, action_seed):
         # This also enables bounded adaptation of one champion through the same implementation.
@@ -258,6 +262,8 @@ class NativePPO(GenomeLearner):
                          *, member_ids=None, timings=None):
         if isinstance(budget, bool) or not isinstance(budget, int) or budget < 1:
             raise ValueError("Learning budget must be a positive integer")
+        if self.accelerated and any(isinstance(a, GraphAgent) for a in agents):
+            raise ValueError("Graph brains require NativePPO(accelerated=False); CPU and CUDA are supported")
         member_ids = list(range(len(agents))) if member_ids is None else list(member_ids)
         if len(member_ids) != len(agents) or any(
                 isinstance(i, bool) or not isinstance(i, int) or i < 0 for i in member_ids) or len(set(member_ids)) != len(member_ids):
@@ -295,7 +301,7 @@ class NativePPO(GenomeLearner):
         with training_phase("setup", self.device, timings):
             masked = self.accelerated and (has_growth or capacity != agents[0].hidden_sizes or
                                            any(a.hidden_sizes != agents[0].hidden_sizes for a in agents))
-            policy = (MaskedBatchedPolicy(agents, self.device, capacity) if masked else BatchedPolicy(agents, self.device))
+            policy = (MaskedBatchedPolicy(agents, self.device, capacity) if masked else build_policy(agents, self.device))
             optimizer = IndependentAdam(policy, self.learning_rate, agents=agents, optimized=self.accelerated)
             rng = IndependentRNG([seed_for(seed, "actions", generation, i) for i in member_indices], self.device)
             # Separate domains keep action streams independent of shuffle work.
@@ -388,7 +394,7 @@ class NativePPO(GenomeLearner):
                             optimizer.export(agents)
                         changed_indices = []
                         for i, agent in enumerate(agents):
-                            before = agent.hidden_sizes
+                            before = getattr(agent, 'hidden_sizes', None)
                             if agent.growth and agent.growth.after_update(agent, count, losses[i], growth_rngs[i]):
                                 growth_events[i] += 1
                                 changed_indices.append(i)
@@ -398,7 +404,7 @@ class NativePPO(GenomeLearner):
                             if self.accelerated:
                                 optimizer.reset_members(changed_indices)
                             else:
-                                policy = BatchedPolicy(agents, self.device)
+                                policy = build_policy(agents, self.device)
                                 optimizer = IndependentAdam(policy, self.learning_rate, agents=agents)
             with training_phase("export", self.device, timings):
                 policy.export(agents)
@@ -414,6 +420,9 @@ class NativePPO(GenomeLearner):
         for i, agent in enumerate(agents):
             if agent.growth is not None:
                 reports[i].metrics.update(growth_events=growth_events[i],
-                    hidden_neurons=sum(agent.hidden_sizes), parameters=agent.genome.values.size)
+                    hidden_neurons=agent.hidden_neurons if isinstance(agent, GraphAgent) else sum(agent.hidden_sizes),
+                    parameters=agent.genome.values.size)
+                if isinstance(agent, GraphAgent):
+                    reports[i].metrics['connections'] = len(agent.edges)
         return reports
 

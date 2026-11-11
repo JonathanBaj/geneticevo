@@ -20,6 +20,14 @@ Evolution, learning, communication, and GPU execution do not guarantee better
 results or general intelligence. These are research tools, not deployment safety
 guarantees.
 
+## What's new in 0.1.0a6
+
+Sparse graph brains can now grow, prune, and rewire neurons and connections
+during learning and across generations. Offspring inherit the evolved topology,
+with PPO learning, save/load, and checkpoint resume support. See
+[sparse graph brains](#sparse-graph-brains) and the runnable
+[graph brain example](examples/graph_brain.py).
+
 ## Installation
 
 Install from PyPI:
@@ -340,14 +348,94 @@ sizes and growth configuration; training counters require a full checkpoint.
 For different widths, sampled parameter distances align parameters by layer and
 neuron index, treating missing neurons as zeros.
 
+## Sparse graph brains
+
+`GraphAgentFactory` adds a brain with arbitrary directed connectivity instead of
+hidden layers. Connections can skip between any computational neurons, form
+cycles or self connections, or leave neurons disconnected. Only existing edges
+have weight genes; a neuron may have zero, one, or many incoming/outgoing edges.
+
+```python
+from geneticevo import GraphAgentFactory, GraphGrowth
+
+factory = GraphAgentFactory(
+    initial_neurons=8,       # Hidden neurons; action/value readouts are additional
+    initial_connections=24,
+    settling_steps=4,
+    growth=GraphGrowth(
+        check_every=32,     # Actual training interactions, checked after PPO updates
+        min_neurons=0,
+        max_neurons=64,
+        max_connections=512,
+        node_add_probability=0.5,
+        node_remove_probability=0.25,
+        connection_add_probability=1.0,
+        connection_remove_probability=0.25,
+        mutation_probability=0.25,
+    ),
+)
+```
+
+Use this factory with `Evolution`, `NativePPO(accelerated=False)`,
+`backend="batched"`, and a positive `learning_budget`. Both discrete and continuous
+actions, CPU/CUDA policies, and Python/tensor environments are supported. Run the
+complete example with the `torch` extra installed:
+
+```sh
+python examples/graph_brain.py --device cpu
+python examples/graph_brain.py --continuous --inheritance baldwinian
+```
+
+At each eligible learning boundary, independent random proposals add/remove
+hidden neurons and add/remove edges. `neurons_per_event` (default 1) and
+`connections_per_event` (default 2) bound each proposal. Pruning removes incident
+edges; additions initialize new edge weights randomly. Surviving genes retain
+their neuron/edge identities. Structural edits can change behavior immediately,
+reset that individual's Adam state, and leave its environment running. Neurons
+may initially be isolated and gain connections in later updates. Growth checks
+round up to completed rollouts; evaluation never edits a brain.
+
+The final connectivity and neuron identities are inherited in both modes.
+Lamarckian inheritance also retains learned weights. Baldwinian inheritance
+keeps birth weights on surviving genes and initializes newly inherited genes
+afresh. At reproduction, `mutation_probability` applies independently to each
+of the four structural proposals before ordinary weight mutation. Fitness
+selection favors successful offspring; random growth/pruning alone does not
+guarantee improvement or find an optimal size. To favor smaller brains explicitly,
+use a custom evaluator with a neuron/connection cost in its fitness. Observation
+inputs and action/value readouts stay fixed; only hidden neurons can be removed.
+`growth=None` fixes topology, while `learner=None` still allows birth mutations
+with a growth configuration. Elites retain their brains; immigrants start fresh.
+
+This model uses a shared graph for the actor and critic. Each observation starts
+from zero neuron activations and runs `settling_steps` synchronous message passes:
+inputs are supplied each pass, hidden neurons apply tanh, and readouts are linear.
+Cycles therefore have bounded computation, and paths longer than the settling
+budget cannot carry that observation to a readout. There is no memory across
+environment steps. This models flexible connectivity, not biological development
+or a connectome reconstruction.
+
+Graph PPO trains growing individuals separately and groups frozen evaluation by
+compatible node/edge counts. `accelerated=True`, SB3, communicating wrappers,
+and crossover are not supported. Custom learners can opt in with
+`supports_graph_growth=True` and call `agent.growth.after_update(...)` at safe
+update boundaries. Save/load, initial agents, archives, diversity measurements,
+and generation checkpoints retain topology. Generation records contain
+`network_neuron_counts` (including readouts), `network_connection_counts`, and
+`network_parameter_counts`; learner metrics include `growth_events`,
+`hidden_neurons`, and `connections`. Lineage records the added/removed neuron IDs
+and edges. Full checkpoints retain optimizer and growth counters.
+
 ## Supported combinations
 
 | Agents / learner | Serial CPU | CPU process evaluation | Batched policies, Python env | Tensor environment |
 |---|---|---|---|---|
 | Vector objective / none | Yes | Yes | No | No |
 | NumPy MLP / none | Yes | Yes | Yes | Yes |
+| Sparse graph / none | Yes | Yes | Yes | Yes |
 | SB3 PPO or DQN / SB3Learner | Yes | Yes; learning stays sequential | No | No |
 | MLP / NativePPO | No | No | Yes | Yes |
+| Sparse graph / NativePPO | No | No | Yes | Yes |
 | Evolved message head / none | Shared serial | No | No | No |
 | SB3 task policy / fixed messages | Shared serial | No | No | No |
 
@@ -356,9 +444,9 @@ flat, finite, strictly bounded `Box`. DQN supports `Discrete` only. Shared world
 use the PettingZoo Parallel protocol with flat `Box` observations. Other spaces
 need explicit tested adapters.
 
-`backend="batched"` groups compatible MLP architectures for evaluation. Fixed-size
+`backend="batched"` groups compatible neural architectures for evaluation. Fixed-size
 learning uses population batches; growth-enabled policies learn individually by
-default and use masked population batches with `NativePPO(accelerated=True)`.
+default. MLPs can use masked population batches with `NativePPO(accelerated=True)`.
 Tensor computation also runs on CPU. Omitting `tensor_env_factory` uses `GymTensorBridge`: Python simulation
 stays on CPU even if policies run on CUDA. This is labeled hybrid execution.
 Setting a device never migrates arbitrary Python simulation code. Native tensor

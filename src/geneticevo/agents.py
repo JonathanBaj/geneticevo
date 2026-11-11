@@ -214,6 +214,12 @@ def load_agent(path: str):
         genome = VectorGenome(data["values"])
     if spec["kind"] == "vector":
         return VectorAgent(genome)
+    if spec["kind"] == "graph":
+        from .graph import GraphAgent, GraphGrowth
+        return GraphAgent(genome, spec['observation_dim'], spec['action_dim'], spec['discrete'],
+            np.array(spec['low'], np.float32), np.array(spec['high'], np.float32),
+            tuple(spec['node_ids']), tuple(tuple(edge) for edge in spec['edges']), spec['next_node_id'],
+            spec['settling_steps'], GraphGrowth(**spec['growth']) if spec.get('growth') is not None else None)
     if spec["kind"] != "mlp":
         raise ValueError("Unknown agent kind")
     return MLPAgent(genome, spec["observation_dim"], tuple(spec["hidden_sizes"]), spec["action_dim"],
@@ -222,12 +228,15 @@ def load_agent(path: str):
 
 
 def architecture_groups(agents):
-    """Population indices grouped by compatible MLP shape and action bounds."""
-    if not agents or any(not isinstance(agent, MLPAgent) for agent in agents):
-        raise ValueError('Batched policies require MLPAgentFactory agents')
+    """Population indices grouped by compatible parameter shapes and spaces."""
+    from .graph import GraphAgent
+    if not agents or any(not isinstance(agent, (MLPAgent, GraphAgent)) for agent in agents):
+        raise ValueError('Batched policies require MLPAgentFactory or GraphAgentFactory agents')
     groups = {}
     for i, agent in enumerate(agents):
-        key = (agent.observation_dim, agent.hidden_sizes, agent.action_dim, agent.discrete,
+        architecture = ((len(agent.node_ids), len(agent.edges), agent.settling_steps)
+                        if isinstance(agent, GraphAgent) else agent.hidden_sizes)
+        key = (type(agent), agent.observation_dim, architecture, agent.action_dim, agent.discrete,
                tuple(agent.low), tuple(agent.high))
         groups.setdefault(key, []).append(i)
     return list(groups.values())

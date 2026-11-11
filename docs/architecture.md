@@ -99,6 +99,44 @@ retain architecture and per-individual counters/RNG state. Custom crossover is
 currently rejected for growth-enabled agents. No network or optimizer state is
 shared between individuals.
 
+## Sparse graph topology
+
+`GraphAgent` stores stable computational neuron IDs and sorted directed edges
+separately from the numeric genome. Observation sources use negative IDs; action
+readouts have IDs `0..action_dim-1`, and the value readout has ID `action_dim`.
+Readout neurons can also send signals, including feedback connections. Other
+neurons may be disconnected, recurrent, or self connected. The genome contains
+one scalar per edge, one bias per computational neuron, and continuous-action
+log standard deviations. A shared graph supplies actor and critic outputs.
+
+Forward evaluation starts with zero activations on every observation and injects
+the observation at each synchronous settling step. Sparse edge gather and
+scatter-add implement weighted messages; hidden neurons use tanh, readouts stay
+linear. The fixed settling budget makes cycles finite and enables ordinary PPO
+autograd through the unrolled computation without episode memory/replay state.
+NumPy inference and tensor inference implement the same computation.
+
+`GraphGrowth` independently proposes adding/removing nodes and edges at learning
+boundaries, within configured bounds. All action/value neurons are permanent.
+Neuron removal deletes incident edges. Surviving weights and biases are mapped
+by IDs, so removing a middle neuron never shifts another neuron's genes. IDs
+are allocated monotonically within a lineage. Edge additions are sampled without
+constructing a dense adjacency matrix. Edits may immediately change behavior;
+any structural change clears Adam state even when parameter counts stay equal.
+The default PPO path rebuilds that individual's sparse tensors after exporting
+learned genes, without resetting its environment. Accelerated masked MLP PPO is
+rejected for graph agents; ordinary tensor execution supports CPU/CUDA.
+
+Reproduction clones the acquired topology before structural and scalar weight
+mutation. Baldwinian learning copies acquired topology back to the birth agent,
+retaining its surviving birth genes and initializing only new genes. New children
+discard training counters; elites preserve theirs in Lamarckian mode. Graph
+architecture is included in archives, portable agent files, and checkpoints.
+Parameter diversity aligns weights by edge IDs and biases by neuron IDs, treating
+missing genes as zeros. Graph crossover is rejected because numeric position
+alone does not identify homologous graph genes. Population metrics record neuron,
+edge, and parameter counts; lineage includes specific structural changes.
+
 ## Custom evaluators and learners
 
 An evaluator implements

@@ -4,7 +4,8 @@ from .evolution import GaussianMutation
 from .runner import Evolution
 from .agents import load_agent
 from .growth import NeuralGrowth
+from .graph import GraphAgent, GraphAgentFactory, GraphGrowth
 
 __all__ = ["Evolution", "EvolutionConfig", "GaussianMutation", "Evaluation", "Scenario",
-           "VectorGenome", "LearnReport", "load_agent", "NeuralGrowth"]
-__version__ = "0.1.0a5"
+           "VectorGenome", "LearnReport", "load_agent", "NeuralGrowth", "GraphAgent", "GraphAgentFactory", "GraphGrowth"]
+__version__ = "0.1.0a6"

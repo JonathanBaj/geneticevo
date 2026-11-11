@@ -44,6 +44,16 @@ def parameter_distance(left, right):
     original flat-vector calculation for compatibility with custom genomes.
     """
     from .agents import MLPAgent
+    from .graph import GraphAgent
+    if isinstance(left, GraphAgent) and isinstance(right, GraphAgent):
+        def genes(agent):
+            params = agent.parameters()
+            result = {('edge', *edge): float(value) for edge, value in zip(agent.edges, params['weights'])}
+            result.update({('bias', node): float(value) for node, value in zip(agent.node_ids, params['biases'])})
+            result.update({('log_std', i): float(value) for i, value in enumerate(params.get('log_std', ()))})
+            return result
+        a, b = genes(left), genes(right)
+        return float(np.sqrt(sum((a.get(key, 0) - b.get(key, 0)) ** 2 for key in a.keys() | b.keys())))
     if isinstance(left, MLPAgent) and isinstance(right, MLPAgent) and left.layout() != right.layout():
         first, second = left.parameters(), right.parameters()
         squared = 0.0

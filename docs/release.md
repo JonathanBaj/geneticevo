@@ -1,4 +1,54 @@
-# Alpha release preparation: geneticevo 0.1.0a5
+# Alpha release preparation: geneticevo 0.1.0a6
+
+Prepared locally on 2026-11-11. Both `pyproject.toml` and
+`src/geneticevo/__init__.py` declare `0.1.0a6`. Use the matching GitHub tag
+`v0.1.0a6` and mark the GitHub release as a prerelease.
+
+Short GitHub release description:
+
+> Adds sparse graph brains with arbitrary connections and cycles, lifetime neuron/connection growth and pruning, and inherited topology across generations. Includes PPO learning, save/load, checkpoint resume, tests, and a runnable example.
+
+## Changes in alpha 6
+
+- New `GraphAgentFactory` and `GraphGrowth` support sparse directed brains,
+  including recurrent/self connections and disconnected neurons.
+- Neurons and connections can be added or removed during learning and at
+  reproduction, within configurable bounds. Surviving genes retain their IDs.
+- Both inheritance modes pass on acquired topology; Lamarckian inheritance also
+  retains learned weights. Existing MLP behavior remains available.
+- Native PPO supports graph brains on CPU/CUDA with `accelerated=False`.
+  Portable saves, initial agents, archives, diversity metrics, structural lineage,
+  and deterministic generation-boundary checkpoint resume include topology.
+- New graph tests, documentation, and `examples/graph_brain.py` cover the feature.
+  Cycles use bounded settling per observation; there is no cross-step memory.
+
+## Build and publish alpha 6
+
+Build and check only the new release artifacts in a separate output directory:
+
+```powershell
+python -m build --no-isolation --outdir dist/0.1.0a6
+python -m twine check --strict dist/0.1.0a6/*
+```
+
+Commit and push all feature and release changes, including the new graph module,
+tests, example, and documentation. Build outputs, virtual environments, and
+`results/` are ignored. Publish a GitHub prerelease tagged `v0.1.0a6` at the
+updated commit. The existing `.github/workflows/release.yml` verifies the tag
+against both version declarations, tests and builds the tagged source, and
+publishes to PyPI through the configured Trusted Publisher and `pypi` environment.
+Publishing the GitHub release triggers that workflow; a push or tag alone does
+not. The README supplies the PyPI project-page description in the uploaded
+distribution metadata. No dependency or workflow version changes are needed.
+
+Validation for the graph feature: **79 passed, 18 skipped** in the local full
+suite; skipped cases require unavailable optional integrations or CUDA hardware.
+Core-only graph checks also passed. Both documented CPU example variants ran.
+These results do not establish CUDA execution for the new graph implementation;
+older CUDA reports retain their original MLP validation context. Historical
+benchmark metadata is not relabeled for this release.
+
+## Historical alpha-5 release preparation
 
 Prepared locally on 2026-11-06. Both `pyproject.toml` and
 `src/geneticevo/__init__.py` declare `0.1.0a5`. Use the matching GitHub tag

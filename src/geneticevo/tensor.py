@@ -118,6 +118,49 @@ class BatchedPolicy(nn.Module):
             agent.genome.assign(np.concatenate([arrays[key][index].reshape(-1) for key, _ in agent.layout()]))
 
 
+class GraphBatchedPolicy(BatchedPolicy):
+    """Sparse edge gathers/scatter-adds, differentiable through settling steps.
+
+    Only existing edges have weights and gradients. Members may have different
+    connectivity while sharing node/edge counts and spaces.
+    """
+    def __init__(self, agents, device='cpu'):
+        nn.Module.__init__(self)
+        from .graph import GraphAgent
+        if any(not isinstance(a, GraphAgent) for a in agents) or len(architecture_groups(agents)) != 1:
+            raise ValueError('Graph policies require compatible GraphAgent instances')
+        first = agents[0]
+        self.device = resolve_device(device)
+        self.population_size = len(agents)
+        self.observation_dim, self.action_dim, self.discrete = first.observation_dim, first.action_dim, first.discrete
+        self.node_count, self.settling_steps = len(first.node_ids), first.settling_steps
+        self.params = nn.ParameterDict({key: nn.Parameter(torch.tensor(
+            np.stack([a.parameters()[key] for a in agents]), device=self.device)) for key, _ in first.layout()})
+        self.register_buffer('low', torch.tensor(first.low, device=self.device))
+        self.register_buffer('high', torch.tensor(first.high, device=self.device))
+        indices = [a.edge_indices() for a in agents]
+        self.register_buffer('sources', torch.tensor(np.stack([x[0] for x in indices]), device=self.device))
+        self.register_buffer('targets', torch.tensor(np.stack([x[1] for x in indices]), device=self.device))
+
+    def forward(self, observations, prefix='actor'):
+        state = observations.new_zeros((*observations.shape[:-1], self.node_count))
+        source = self.sources[:, None, :].expand(-1, observations.shape[1], -1)
+        target = self.targets[:, None, :].expand_as(source)
+        for _ in range(self.settling_steps):
+            values = torch.cat((observations, state), dim=-1)
+            messages = values.gather(-1, source) * self.params['weights'][:, None, :]
+            updated = self.params['biases'][:, None, :].expand_as(state).scatter_add(-1, target, messages)
+            # Linear readouts keep the critic unbounded; hidden neurons use tanh.
+            state = torch.cat((updated[..., :self.action_dim + 1],
+                               torch.tanh(updated[..., self.action_dim + 1:])), dim=-1)
+        return state[..., :self.action_dim] if prefix == 'actor' else state[..., self.action_dim:self.action_dim + 1]
+
+
+def build_policy(agents, device='cpu'):
+    from .graph import GraphAgent
+    return GraphBatchedPolicy(agents, device) if isinstance(agents[0], GraphAgent) else BatchedPolicy(agents, device)
+
+
 class MaskedBatchedPolicy(BatchedPolicy):
     """Fixed capacity per layer; each individual's active prefix can grow in place.
 
@@ -398,7 +441,7 @@ def evaluate_batched(agents, scenarios, env_factory, tensor_env_factory=None, de
             for i, score in zip(indices, scores):
                 evaluations[i] = score
         return evaluations
-    policy = MaskedBatchedPolicy(agents, device, growth_capacity) if masked else BatchedPolicy(agents, device)
+    policy = MaskedBatchedPolicy(agents, device, growth_capacity) if masked else build_policy(agents, device)
     returns, lengths = [], []
     for start in range(0, len(scenarios), env_copies):
         chunk = scenarios[start:start + env_copies]

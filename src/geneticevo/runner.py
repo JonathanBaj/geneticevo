@@ -13,6 +13,7 @@ import numpy as np
 
 from .core import EvolutionConfig, Individual, scenarios_for, seed_for
 from .agents import MLPAgent, architecture_groups
+from .graph import GraphAgent
 from .evaluation import GymEvaluator
 from .evolution import GaussianMutation, select, parameter_distance
 from .execution import evaluate_population
@@ -136,6 +137,11 @@ class Evolution:
             agent = self._factory_agent(index)
             if any(agent is individual.agent for individual in self.population):
                 raise ValueError("agent_factory returned the same mutable agent for multiple individuals")
+            if isinstance(agent, GraphAgent):
+                if self.crossover is not None:
+                    raise ValueError('Graph brains currently require crossover=None')
+                if agent.growth and self.learner and not getattr(self.learner, 'supports_graph_growth', False):
+                    raise ValueError('GraphGrowth requires NativePPO or a custom learner with supports_graph_growth=True')
             if isinstance(agent, MLPAgent) and agent.growth is not None:
                 if self.crossover is not None:
                     raise ValueError('NeuralGrowth currently requires crossover=None')
@@ -143,6 +149,13 @@ class Evolution:
                     raise ValueError('NeuralGrowth requires NativePPO or a custom learner with supports_neural_growth=True')
             if index < len(self.initial_agents):
                 initial = self.initial_agents[index]
+                if isinstance(agent, GraphAgent) and isinstance(initial, GraphAgent):
+                    if (agent.observation_dim, agent.action_dim, agent.discrete, agent.settling_steps, agent.growth) != (
+                            initial.observation_dim, initial.action_dim, initial.discrete, initial.settling_steps, initial.growth
+                            ) or not (np.array_equal(agent.low, initial.low) and np.array_equal(agent.high, initial.high)):
+                        raise ValueError('Initial graph configuration does not match')
+                    agent.inherit_structure(initial,
+                        np.random.default_rng(seed_for(self.config.seed, 'growth', index)))
                 if isinstance(agent, MLPAgent) and isinstance(initial, MLPAgent) and agent.growth is not None:
                     if agent.growth != initial.growth:
                         raise ValueError('Initial NeuralGrowth configuration does not match')
@@ -159,14 +172,14 @@ class Evolution:
                 agent.genome.assign(initial.genome.vector())
             if self.learner:
                 self.learner.validate(agent, self.training_env_factory, self.backend)
-            elif self.backend != "batched" and self.device != "cpu" and type(agent).__module__ == "geneticevo.agents":
+            elif self.backend != "batched" and self.device != "cpu" and isinstance(agent, (MLPAgent, GraphAgent)):
                 raise ValueError("NumPy policies use CPU; select backend='batched' for tensor policy execution")
             self.population.append(self._new(agent, 0))
         if self.backend == "batched" and not getattr(self.learner, "accelerated", False):
-            from .tensor import BatchedPolicy
+            from .tensor import build_policy
             agents = [x.agent for x in self.population]
             for indices in architecture_groups(agents):
-                BatchedPolicy([agents[i] for i in indices], self.device)
+                build_policy([agents[i] for i in indices], self.device)
         # Accelerated learning validates and constructs its policy per chunk.
         # Building and discarding another GPU copy here duplicates setup work.
 
@@ -219,6 +232,9 @@ class Evolution:
         if self.config.inheritance == 'baldwinian':
             for index, (individual, learned) in enumerate(zip(self.population, agents)):
                 inherited = individual.agent
+                if isinstance(inherited, GraphAgent) and inherited.growth is not None:
+                    inherited.inherit_structure(learned,
+                        np.random.default_rng(seed_for(self.config.seed, 'growth', generation, index, 1)))
                 if isinstance(inherited, MLPAgent) and inherited.growth is not None:
                     # The acquired size is heritable even when learned weights are
                     # discarded. Preserve birth genes in the overlapping subnetwork.
@@ -247,6 +263,7 @@ class Evolution:
         self.archive = []
         for candidate in candidates:
             if not any(getattr(candidate.agent, "hidden_sizes", None) == getattr(x.agent, "hidden_sizes", None) and
+                       getattr(candidate.agent, 'structure', None) == getattr(x.agent, 'structure', None) and
                        np.array_equal(candidate.agent.genome.vector(), x.agent.genome.vector()) for x in self.archive):
                 self.archive.append(candidate)
             if len(self.archive) == self.config.archive_size:
@@ -272,7 +289,7 @@ class Evolution:
                 child.genome.assign(self.crossover(parent.agent.genome.clone(), other.agent.genome.clone(), self.mutation_rng).vector())
                 parents += (other.id,)
             architecture_mutation = None
-            if isinstance(child, MLPAgent) and child.growth is not None:
+            if isinstance(child, (MLPAgent, GraphAgent)) and child.growth is not None:
                 architecture_mutation = child.growth.mutate(child, self.mutation_rng)
             metadata = self.mutation(child.genome, self.mutation_rng)
             if architecture_mutation is not None:
@@ -404,7 +421,14 @@ class Evolution:
                       "elites": cfg.elite_count if generation else 0, "immigrants": cfg.immigrant_count if generation else 0,
                       "mutation": repr(self.mutation), "world_steps": sum(x.world_steps for x in evaluations)}
             if any(isinstance(agent, MLPAgent) and agent.growth is not None for agent in agents):
-                record['network_hidden_sizes'] = [list(agent.hidden_sizes) for agent in agents]
+                record['network_hidden_sizes'] = [list(agent.hidden_sizes) if isinstance(agent, MLPAgent) else None
+                                                 for agent in agents]
+                record['network_parameter_counts'] = [agent.genome.vector().size for agent in agents]
+            if any(isinstance(agent, GraphAgent) for agent in agents):
+                record['network_neuron_counts'] = [len(agent.node_ids) if isinstance(agent, GraphAgent) else
+                    sum(agent.hidden_sizes) for agent in agents]
+                record['network_connection_counts'] = [len(agent.edges) if isinstance(agent, GraphAgent) else
+                    sum(int(np.prod(shape)) for name, shape in agent.layout() if '_w' in name) for agent in agents]
                 record['network_parameter_counts'] = [agent.genome.vector().size for agent in agents]
             if before:
                 record["pre_learning_mean"] = float(np.mean([x.fitness for x in before]))
