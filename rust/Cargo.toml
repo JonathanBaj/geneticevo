@@ -1,0 +1,23 @@
+[package]
+name = "geneticevo-core"
+version = "0.1.0-alpha.8"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+
+[lib]
+name = "_geneticevo_rust"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+matrixmultiply = "0.3.10"
+numpy = "0.26"
+pyo3 = { version = "0.26", features = ["abi3-py310"] }
+rand = "0.8.5"
+rand_chacha = "0.3.1"
+rand_distr = "0.4.3"
+rayon = "1.10"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

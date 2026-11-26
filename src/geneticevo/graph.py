@@ -82,7 +82,7 @@ class GraphGrowth:
         if len(agent.edges) > self.max_connections:
             raise ValueError('Graph connections exceed max_connections')
 
-    def _edit(self, agent, rng, probabilities):
+    def _edit(self, agent, rng, probabilities, *, before_edit=None):
         self.validate(agent)
         before = agent.structure
         add_node, remove_node, add_edge, remove_edge = probabilities
@@ -106,10 +106,13 @@ class GraphGrowth:
         if rng.random() < add_edge:
             count = min(self.connections_per_event, self.max_connections - len(edges))
             edges.update(_new_edges(nodes, agent.observation_dim, edges, count, rng))
-        agent.restructure(tuple(nodes), tuple(sorted(edges)), next_id, rng)
+        topology = tuple(nodes), tuple(sorted(edges))
+        if before_edit is not None and topology != before:
+            before_edit()
+        agent.restructure(*topology, next_id, rng)
         return before != agent.structure
 
-    def after_update(self, agent, interactions, value_loss, rng):
+    def after_update(self, agent, interactions, value_loss, rng, *, before_edit=None):
         _integer('interaction count', interactions, 1)
         self.validate(agent)
         if not hasattr(agent, 'training_state'):
@@ -120,8 +123,10 @@ class GraphGrowth:
         if state['interactions'] - state['last_check'] < self.check_every:
             return False
         state['last_check'] = state['interactions']
-        changed = self._edit(agent, rng, (self.node_add_probability, self.node_remove_probability,
-            self.connection_add_probability, self.connection_remove_probability))
+        probabilities = (self.node_add_probability, self.node_remove_probability,
+            self.connection_add_probability, self.connection_remove_probability)
+        changed = (self._edit(agent, rng, probabilities) if before_edit is None else
+                   self._edit(agent, rng, probabilities, before_edit=before_edit))
         state['events'] += int(changed)
         return changed
 
@@ -237,6 +242,7 @@ class GraphAgent:
         self.next_node_id = max(self.next_node_id, next_node_id)
         if hasattr(self, 'training_state'):
             self.training_state.pop('adam', None)
+            self.training_state.pop('rust_ppo', None)
         return True
 
     def inherit_structure(self, learned, rng):

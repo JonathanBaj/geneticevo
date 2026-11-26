@@ -12,12 +12,13 @@ from typing import Callable
 import numpy as np
 
 from .core import EvolutionConfig, Individual, scenarios_for, seed_for
-from .agents import MLPAgent, architecture_groups
-from .graph import GraphAgent
+from .agents import MLPAgent, MLPAgentFactory, architecture_groups
+from .graph import GraphAgent, GraphAgentFactory
 from .evaluation import GymEvaluator
 from .evolution import GaussianMutation, select, parameter_distance
 from .execution import evaluate_population
 from .results import Result, load_checkpoint, save_checkpoint, software_metadata, write_json, json_default, describe
+from .rust_ppo import RustNativePPO, evaluate_rust, require_extension
 import json
 
 
@@ -27,10 +28,12 @@ class Evolution:
     Stops and checkpoints happen after complete generations. Time/interaction
     caps may therefore overshoot by a generation, and requested learning budgets
     may round to backend update boundaries. All actual costs are recorded.
+    A positive budget defaults to Rust PPO for built-in CPU neural agents
+    with a Gymnasium environment when the learner and backend are omitted.
     """
 
     def __init__(self, *, agent_factory, env_factory=None, config=None, mutation=None,
-                 learner=None, evaluator=None, backend="serial", device="cpu",
+                 learner=None, evaluator=None, backend=None, device="cpu",
                  environment_device="cpu", tensor_env_factory=None, training_env_factory=None,
                  selection_hook=None, crossover=None, validation_sampler=None, archive_sampler=None,
                  callbacks=(), initial_agents=()):
@@ -39,6 +42,12 @@ class Evolution:
         self.env_factory = env_factory
         self.training_env_factory = training_env_factory or env_factory
         self.mutation = mutation if mutation is not None else GaussianMutation()
+        if (learner is None and self.config.learning_budget and backend in (None, "rust")
+                and isinstance(agent_factory, (MLPAgentFactory, GraphAgentFactory))
+                and env_factory is not None and tensor_env_factory is None and device == environment_device == "cpu"):
+            learner = RustNativePPO(env_copies=self.config.env_copies)
+        if backend is None:
+            backend = "rust" if isinstance(learner, RustNativePPO) and evaluator is None else "serial"
         self.learner = learner
         self.evaluator = evaluator or (GymEvaluator(env_factory, self.config.max_episode_steps) if env_factory else None)
         self.backend, self.device, self.environment_device = backend, device, environment_device
@@ -68,25 +77,36 @@ class Evolution:
         self._validate()
 
     def _validate(self):
+        rust_learner = isinstance(self.learner, RustNativePPO)
         if self.evaluator is None:
             raise ValueError("Supply env_factory or a functional evaluator")
-        if self.backend not in ("serial", "parallel", "batched"):
-            raise ValueError("backend must be serial, parallel or batched")
+        if self.backend not in ("serial", "parallel", "batched", "rust"):
+            raise ValueError("backend must be serial, parallel, batched or rust")
         if self.config.learning_budget and self.learner is None:
             raise ValueError("learning_budget requires a learner")
         if self.learner is not None and (not self.config.learning_budget or not self.training_env_factory):
             raise ValueError("Learners require a positive per-individual learning_budget and training_env_factory")
         if len(self.initial_agents) > self.config.population_size:
             raise ValueError("Too many initial agents")
+        if rust_learner and self.backend == "batched":
+            raise ValueError("Use backend='rust', 'serial', or 'parallel' with RustNativePPO")
         if self.backend != "batched" and self.tensor_env_factory is not None:
             raise ValueError("tensor_env_factory requires backend='batched'")
         if self.environment_device != "cpu" and self.tensor_env_factory is None:
             raise ValueError("Python environments execute on CPU; a tensor_env_factory is required for an environment device")
+        if self.backend == "rust" or rust_learner:
+            if self.device != "cpu" or self.environment_device != "cpu":
+                raise ValueError("Rust execution requires CPU policy and environment devices")
+            if self.backend == "rust" and self.env_factory is None:
+                raise ValueError("backend='rust' requires a Gymnasium env_factory")
+            if self.learner is not None and not rust_learner:
+                raise ValueError("backend='rust' requires RustNativePPO for lifetime learning")
+            require_extension()
         if self.backend == "batched" or self.device != "cpu":
             from .tensor import resolve_device
             resolve_device(self.device)
             resolve_device(self.environment_device)
-        if self.backend == "batched":
+        if self.backend in ("batched", "rust"):
             if type(self.evaluator) is not GymEvaluator:
                 raise ValueError("Batched evaluation currently supports the built-in GymEvaluator")
             if self.tensor_env_factory and self.device != self.environment_device:
@@ -104,7 +124,7 @@ class Evolution:
             if self.learner.env_copies != self.config.env_copies:
                 raise ValueError("config.env_copies must match learner.env_copies")
         if self.learner is not None and hasattr(self.learner, "learn_population"):
-            if not self.config.elite_learning:
+            if not self.config.elite_learning and not rust_learner:
                 raise ValueError("Native batched learning requires elite_learning=True")
             if self.learner.device != self.device:
                 raise ValueError("Learner device must match policy device")
@@ -192,6 +212,9 @@ class Evolution:
                 population_chunk_size=getattr(self.learner, "population_chunk_size", None),
                 masked=getattr(self.learner, "accelerated", False),
                 growth_capacity=getattr(self.learner, "growth_capacity", None))
+        if self.backend == "rust":
+            return evaluate_rust(agents, scenarios, self.env_factory, self.config.env_copies,
+                                 self.config.max_episode_steps, self.learner)
         if hasattr(self.evaluator, "evaluate_population"):
             return self.evaluator.evaluate_population(agents, scenarios, action_seed)
         return evaluate_population(self.evaluator, agents, scenarios, action_seed,
@@ -209,7 +232,15 @@ class Evolution:
                 indices.append(index)
         reports = []
         if self.learner:
-            if hasattr(self.learner, "learn_population"):
+            if isinstance(self.learner, RustNativePPO):
+                if indices:
+                    reports = self.learner.learn_population(
+                        [agents[i] for i in indices], self.training_env_factory, None,
+                        self.config.learning_budget, self.config.seed, generation,
+                        member_ids=[int(self.population[i].id[1:]) for i in indices],
+                        timings=self._learning_phase_timings if self.learner.measure_phases else None,
+                    )
+            elif hasattr(self.learner, "learn_population"):
                 if len(indices) != len(agents):
                     raise ValueError("Native batched learning requires elite_learning=True")
                 options = {}

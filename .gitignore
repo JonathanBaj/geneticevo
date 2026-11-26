@@ -9,4 +9,5 @@ dist/
 results/
 *.checkpoint
 .coverage
+/rust/target/
 

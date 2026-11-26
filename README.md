@@ -20,14 +20,13 @@ Evolution, learning, communication, and GPU execution do not guarantee better
 results or general intelligence. These are research tools, not deployment safety
 guarantees.
 
-## What's new in 0.1.0a7
+## What's new in 0.1.0a8
 
-MLPs can now shrink during learning and add or remove hidden layers during life
-and reproduction. Offspring inherit the resulting architecture, and accelerated
-PPO supports mixed-depth batches. See [network growth](#optional-lifetime-network-growth)
-and run `python examples/neural_growth.py --dynamic-depth --accelerated --device cpu`.
-The feature passed [CUDA validation](docs/cuda_depth_validation_2026-11-11.md),
-including exact checkpoint resume and portable saves.
+Rust now powers CPU PPO by default for built-in MLPs and sparse graph policies,
+including networks that change width, depth, or connectivity during training.
+Checkpoints preserve each individual's optimizer and random streams. Use
+`--no-rust` in the PPO examples to select Torch. See [Rust CPU PPO](#rust-cpu-ppo)
+for installation and [CPU benchmarks](docs/rust_validation.md) for measured results.
 
 ## Installation
 
@@ -220,7 +219,7 @@ Use `learner=None` and `learning_budget=0` for evolution only.
   use that copy, while reproduction uses the original genes.
 - Unchanged elites continue optimizer/counter/replay state by default and learn
   again (`elite_learning=True`). Set it false to skip further elite learning with
-  serial SB3/custom learners. Native batching requires it true.
+  Rust PPO or serial SB3/custom learners. Torch-native batching requires it true.
 - Mutated children and immigrants start fresh optimizer, replay/rollout,
   exploration, counter, and random-action state. DQN targets are synchronized to
   the child's mutated online network. Unchanged elites preserve DQN targets.
@@ -269,6 +268,47 @@ CPU. Small networks often favor CPU. [Measured results](docs/accelerated_ppo_ben
 include the full matrix, ablations, memory, growth, and profiling.
 [Benchmark commands and limitations](docs/accelerated_ppo.md) explain reproduction.
 
+## Rust CPU PPO
+
+From a source checkout, install the main package and the optional core with a
+Rust toolchain and platform linker available:
+
+```sh
+python -m pip install . ./rust
+python examples/neural_growth.py --dynamic-depth
+```
+
+Install the alpha with Rust from PyPI once the matching `geneticevo-core` wheel
+is published:
+
+```sh
+python -m pip install --pre "geneticevo[rust]==0.1.0a8"
+```
+
+A compatible wheel requires only CPython and the ordinary geneticevo
+dependencies at runtime.
+
+The `native_ppo.py`, `neural_growth.py`, and `graph_brain.py` examples use Rust
+by default on CPU. Pass `--no-rust` to select Torch PPO. The `--device cuda` and
+`--accelerated` options also select Torch where supported.
+
+In `Evolution`, a positive `learning_budget` selects Rust PPO for a built-in MLP
+or graph factory with a CPU Gymnasium environment when `learner` and `backend`
+are omitted. The default learner uses `config.env_copies`.
+Pass `learner=RustNativePPO(...)` to customize
+PPO settings, or pass `learner=NativePPO(...), backend="batched"` to use Torch.
+The Rust backend supports changing widths, depths, and graph topology, and
+discrete and bounded continuous actions. Training and frozen selection use Rust
+policy kernels, and archives use the NumPy reference evaluator.
+Set `population_chunk_size` on the learner to bound live population memory, and
+set `RAYON_NUM_THREADS` before launch to control Rust's worker count.
+
+On a Ryzen 9 8945HS with four worker threads, the growing-network benchmark
+ran 3.27–4.43× faster per complete generation than accelerated Torch PPO with
+the same Gymnasium environment. The measured cases covered 16 to 1,024 agents
+and initial hidden widths of 4 to 256. See [Rust PPO validation](docs/rust_validation.md)
+for the matrix and comparisons with Torch tensor simulation.
+
 ## Optional lifetime network growth
 
 Enable growth on the built-in MLP factory; `growth=None` (the default) retains
@@ -299,15 +339,16 @@ factory = MLPAgentFactory(
 )
 ```
 
-Pass this factory to an `Evolution` with `NativePPO`, `backend="batched"`, and a
-positive `learning_budget`. Install the `torch` extra for PPO. A complete runnable
-example is [examples/neural_growth.py](examples/neural_growth.py):
+Pass this factory to `Evolution` with a positive `learning_budget` to use Rust
+PPO on CPU, or select `NativePPO` with `backend="batched"` and the `torch` extra.
+See [the growth example](examples/neural_growth.py).
 
 ```sh
 python examples/neural_growth.py --device cpu
 python examples/neural_growth.py --continuous --inheritance baldwinian
 python examples/neural_growth.py --value-loss-threshold 0.5
 python examples/neural_growth.py --dynamic-depth --accelerated --device cpu
+python examples/neural_growth.py --dynamic-depth --no-rust
 ```
 
 During training, architecture edits are checked after completed PPO rollouts.
@@ -408,14 +449,15 @@ factory = GraphAgentFactory(
 )
 ```
 
-Use this factory with `Evolution`, `NativePPO(accelerated=False)`,
-`backend="batched"`, and a positive `learning_budget`. Both discrete and continuous
-actions, CPU/CUDA policies, and Python/tensor environments are supported. Run the
-complete example with the `torch` extra installed:
+Use this factory with `Evolution` and a positive `learning_budget`.
+Rust PPO is the default for CPU Gymnasium runs. `NativePPO(accelerated=False)`
+with `backend="batched"` supports CPU/CUDA policies and Python/tensor
+environments. Both support discrete and continuous actions.
 
 ```sh
 python examples/graph_brain.py --device cpu
 python examples/graph_brain.py --continuous --inheritance baldwinian
+python examples/graph_brain.py --no-rust
 ```
 
 At each eligible learning boundary, independent random proposals add/remove
@@ -447,9 +489,10 @@ budget cannot carry that observation to a readout. There is no memory across
 environment steps. This models flexible connectivity, not biological development
 or a connectome reconstruction.
 
-Graph PPO trains growing individuals separately and groups frozen evaluation by
-compatible node/edge counts. `accelerated=True`, SB3, communicating wrappers,
-and crossover are not supported. Custom learners can opt in with
+Torch graph PPO trains growing individuals separately and groups frozen evaluation
+by compatible node/edge counts. Rust graph PPO batches mixed topologies.
+`NativePPO(accelerated=True)`, SB3, communicating wrappers, and crossover are
+unsupported. Custom learners can opt in with
 `supports_graph_growth=True` and call `agent.growth.after_update(...)` at safe
 update boundaries. Save/load, initial agents, archives, diversity measurements,
 and generation checkpoints retain topology. Generation records contain
@@ -468,6 +511,7 @@ and edges. Full checkpoints retain optimizer and growth counters.
 | SB3 PPO or DQN / SB3Learner | Yes | Yes; learning stays sequential | No | No |
 | MLP / NativePPO | No | No | Yes | Yes |
 | Sparse graph / NativePPO | No | No | Yes | Yes |
+| MLP or sparse graph / RustNativePPO | Yes | Yes | Yes | No |
 | Evolved message head / none | Shared serial | No | No | No |
 | SB3 task policy / fixed messages | Shared serial | No | No | No |
 

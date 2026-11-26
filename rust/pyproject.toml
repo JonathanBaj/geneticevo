@@ -1,0 +1,17 @@
+[build-system]
+requires = ["maturin>=1.9.4,<2"]
+build-backend = "maturin"
+
+[project]
+name = "geneticevo-core"
+version = "0.1.0a8"
+description = "Optional native CPU training engine for geneticevo"
+readme = {text = "Native CPU PPO kernels for the optional Rust backend in geneticevo. Install the matching version of geneticevo to run experiments.", content-type = "text/markdown"}
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+dependencies = ["numpy>=1.26,<3"]
+
+[tool.maturin]
+module-name = "_geneticevo_rust"
+locked = true

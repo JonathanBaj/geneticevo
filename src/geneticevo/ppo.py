@@ -9,7 +9,7 @@ import time
 import numpy as np
 import torch
 
-from .agents import MLPAgent, architecture_groups
+from .agents import MLPAgent, architecture_groups, validate_training_environment
 from .graph import GraphAgent
 from .core import LearnReport, seed_for
 from .learners import GenomeLearner
@@ -235,22 +235,7 @@ class NativePPO(GenomeLearner):
             raise ValueError("NativePPO requires MLPAgentFactory or GraphAgentFactory and backend='batched'")
         if isinstance(agent, GraphAgent) and self.accelerated:
             raise ValueError("Graph brains require NativePPO(accelerated=False); CPU and CUDA are supported")
-        from .agents import validate_spaces
-        env = env_factory()
-        try:
-            validate_spaces(env.observation_space, env.action_space)
-            if env.observation_space.shape != (agent.observation_dim,):
-                raise ValueError("Training observation space differs")
-            from gymnasium import spaces
-            if isinstance(env.action_space, spaces.Discrete) != agent.discrete or (
-                env.action_space.n if agent.discrete else env.action_space.shape[0]) != agent.action_dim:
-                raise ValueError("Training action space differs")
-            if not agent.discrete and not (np.array_equal(env.action_space.low, agent.low) and np.array_equal(env.action_space.high, agent.high)):
-                raise ValueError("Training action bounds differ")
-            from .integrations_validation import reject_normalization
-            reject_normalization(env)
-        finally:
-            env.close()
+        validate_training_environment(agent, env_factory)
 
     def prepare(self, agent, seed):
         if not isinstance(agent, (MLPAgent, GraphAgent)):

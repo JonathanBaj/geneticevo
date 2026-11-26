@@ -1,4 +1,35 @@
-# Alpha release preparation: geneticevo 0.1.0a7
+# Release notes
+
+## geneticevo 0.1.0a8 (Rust CPU PPO)
+
+GitHub tag `v0.1.0a8`. Mark this release as a prerelease.
+
+> Adds Rust-accelerated CPU PPO as the default for built-in MLP and sparse graph
+> training, including networks that change topology during learning. Checkpoints
+> preserve optimizer and random state, and `--no-rust` switches the PPO examples
+> to Torch.
+
+- Added `RustNativePPO` and `backend="rust"` for Gymnasium CPU runs with dense
+  MLPs and sparse graph policies. Rust is the default for the built-in CPU PPO
+  examples and for compatible `Evolution` runs with a positive budget and no
+  explicit learner or backend. The examples accept `--no-rust` for Torch PPO.
+- Added per-individual Rust optimizer and random-stream checkpoint state,
+  alongside the existing portable agent format.
+- Added Windows, Linux, and macOS wheel builds for the separate
+  `geneticevo-core` package. The main wheel remains pure Python.
+
+See [CPU validation and benchmarks](rust_validation.md).
+
+### Build and publish alpha 8
+
+1. Push the release commit and tag `v0.1.0a8`. The Rust CPU wheels workflow
+   builds Windows, Linux, and macOS artifacts from that tag.
+2. Publish those wheels to PyPI as `geneticevo-core==0.1.0a8` so the
+   `geneticevo[rust]` extra can resolve its pinned dependency.
+3. Publish the GitHub prerelease for `v0.1.0a8`. The existing Release to PyPI
+   workflow publishes the main `geneticevo==0.1.0a8` distribution.
+
+## Historical alpha-7 release preparation
 
 Prepared locally on 2026-11-11. Both `pyproject.toml` and
 `src/geneticevo/__init__.py` declare `0.1.0a7`. Use the matching GitHub tag

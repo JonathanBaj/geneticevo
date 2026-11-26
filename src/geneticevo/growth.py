@@ -86,11 +86,12 @@ class NeuralGrowth:
                             not self.min_hidden_size <= x <= self.max_hidden_size for x in sizes):
             raise ValueError('NeuralGrowth requires integer hidden sizes and depth within its min/max bounds')
 
-    def after_update(self, agent, interactions, value_loss, rng):
+    def after_update(self, agent, interactions, value_loss, rng, *, before_edit=None):
         """Called by NativePPO after an update; custom learners may also use it.
 
         Training counters belong to the individual and reset on fresh clones.
         Return True if the architecture changed. Evaluation never calls this.
+        A backend can supply before_edit to synchronize trained genes on demand.
         """
         self.validate_sizes(agent.hidden_sizes)
         if isinstance(interactions, bool) or not isinstance(interactions, int) or interactions < 1:
@@ -120,6 +121,8 @@ class NeuralGrowth:
         else:
             probabilities = np.array([p for _, p in events])
             event = events[int(rng.choice(len(events), p=probabilities / probabilities.sum()))][0]
+        if before_edit is not None:
+            before_edit()
         if event == 'add_layer':
             index = int(rng.integers(len(agent.hidden_sizes) + 1))
             agent.insert_hidden_layer(index, self.layer_size(agent, index), rng)

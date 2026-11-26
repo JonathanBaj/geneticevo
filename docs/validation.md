@@ -52,6 +52,7 @@ python -m pytest -q
 python benchmarks/equal_work.py --repeats 3
 python benchmarks/ppo_updates.py
 python benchmarks/ppo_updates.py --device cuda
+python benchmarks/rust_vs_python.py
 python benchmarks/baselines.py --seeds 1 2 3
 ```
 
@@ -85,6 +86,16 @@ benchmark, not an algorithm superiority study. GPU validation on 2026-11-05
 passed 50 tests and 21 subtests with no skips. See the
 [measured results](accelerated_ppo_benchmarks_2026-11-05.md) and
 [commands and methodology](accelerated_ppo.md).
+
+The optional extension tests compare mixed-topology float32 outputs against
+NumPy at `atol=2e-6, rtol=2e-5`, check function preservation at widening,
+and compare PPO metrics and a fixed-rollout Adam update against Torch for
+categorical and squashed Gaussian policies at `atol=3e-6, rtol=3e-5`.
+Rust unit tests also check finite-difference dense and cyclic-graph gradients,
+GAE bootstrapping, clipped loss derivatives, and per-agent Adam correction.
+End-to-end tests cover mixed topology, chunk-independent random streams,
+individual optimizer resets, and exact checkpoint resume for both inheritance
+modes and graph growth. See [Rust tests and CPU benchmarks](rust_validation.md).
 
 `baselines.py` uses three independent seeds and reports frozen random behavior,
 evolution only, RL only, evolution plus RL, and fixed-policy communication

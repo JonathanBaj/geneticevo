@@ -110,6 +110,42 @@ retain architecture and per-individual counters/RNG state. Custom crossover is
 currently rejected for growth-enabled agents. No network or optimizer state is
 shared between individuals.
 
+## Rust CPU execution
+
+`RustNativePPO` is the default learner for a positive learning budget on built-in
+CPU MLP and graph factories with a Gymnasium environment. The default evaluation
+backend for this learner is `"rust"`, which batches frozen policy calls. Explicit
+evaluation backends and custom evaluators can pair with the same Rust learner.
+The optional PyO3 extension ships in a separate `geneticevo-core` wheel.
+The Python package owns the environment instances, inheritance, mutation,
+selection, lineage, metrics, archives, and generation-boundary checkpoints.
+
+Rust holds each policy's active float32 weights, rollout, Adam moments and
+step, and separate ChaCha streams for action sampling and minibatch shuffling.
+Dense layers use contiguous row-major buffers and matrix multiplication for
+larger products. Sparse graphs propagate gradients through the configured
+settling steps, including recurrent edges. Rayon distributes independent
+members while PyO3 releases the GIL. Mixed widths, depths, and graph structures
+share a population without padding. Population chunks can bound memory use.
+
+Each Gymnasium step crosses the boundary with one contiguous observation
+batch, one action batch, and one batch of transition outcomes. Rust takes an
+owned observation snapshot before releasing the GIL. It batches critic inference
+across each rollout and uses the pre-reset observation for truncation
+bootstrapping. PPO updates run over the Rust-owned trajectory. Python calls
+the same growth rules used by native tensor PPO and transfers genes when an
+actual edit needs them. Rust activates the new topology and resets only that
+member's Adam state. Live environments, random streams, and Python growth
+counters continue across edits.
+
+At the generation boundary, the Python agent receives its trained genes,
+optimizer moments and step, and random-stream positions. Checkpoints store
+these alongside the existing growth counters and stable topology identities.
+The live environments and completed rollouts are discarded. Portable champion
+folders contain the usual NumPy-compatible agent data. CPU Torch tensor
+environments, CUDA policies, SB3, and shared-world execution use their existing
+backends.
+
 ## Sparse graph topology
 
 `GraphAgent` stores stable computational neuron IDs and sorted directed edges
