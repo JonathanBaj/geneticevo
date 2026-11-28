@@ -6,6 +6,11 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Version tag to publish (for example v0.1.0a8). Leave empty for a test build.
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -33,6 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@v7
         with:
@@ -72,3 +78,46 @@ jobs:
           name: geneticevo-core-${{ matrix.os }}
           path: rust-wheelhouse/*.whl
           if-no-files-found: error
+
+  publish:
+    name: Publish geneticevo-core to PyPI
+    if: >-
+      (github.event_name == 'push' && github.ref_type == 'tag') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.release_tag != '')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: pypi-core-${{ inputs.release_tag || github.ref_name }}
+      cancel-in-progress: false
+    environment:
+      name: pypi
+      url: https://pypi.org/project/geneticevo-core/
+    permissions:
+      id-token: write
+    steps:
+      - name: Download the tested wheels
+        uses: actions/download-artifact@v8
+        with:
+          pattern: geneticevo-core-*
+          path: rust-wheelhouse/
+          merge-multiple: true
+      - name: Verify wheel versions match the release tag
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+
+          version = os.environ["RELEASE_TAG"].removeprefix("v")
+          prefix = f"geneticevo_core-{version}-"
+          files = list(Path("rust-wheelhouse").iterdir())
+          if not files or any(not wheel.is_file() or not wheel.name.startswith(prefix) or
+                              wheel.suffix != ".whl" for wheel in files):
+              raise SystemExit(f"Expected geneticevo-core wheels for {version}, found {files}")
+      - name: Publish to PyPI with Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: rust-wheelhouse/
+          skip-existing: true
