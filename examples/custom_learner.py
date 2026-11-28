@@ -1,4 +1,4 @@
-"""A non-PPO learner extension: budgeted random-search lifetime adaptation."""
+"""Budgeted random-search lifetime adaptation using the custom learner interface."""
 from dataclasses import dataclass
 import numpy as np
 

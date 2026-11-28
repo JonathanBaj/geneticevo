@@ -61,7 +61,7 @@ def load_checkpoint(path):
 
 def software_metadata():
     versions = {}
-    for name in ("geneticevo", "numpy", "gymnasium", "torch", "stable-baselines3", "pettingzoo"):
+    for name in ("geneticevo", "numpy", "gymnasium", "torch", "pettingzoo"):
         try:
             versions[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:

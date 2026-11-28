@@ -1,6 +1,21 @@
 # Release notes
 
-## geneticevo 0.1.0a8 (Rust CPU PPO)
+## geneticevo 0.1.0a9
+
+- Removed the built-in PPO and DQN learners, the Stable-Baselines3 integration, and the
+  associated extras, commands, and training benchmarks.
+- Rust remains available for frozen CPU inference, and Torch supports CPU and CUDA.
+  Install the matching `geneticevo-core==0.1.0a9` wheel to use `backend="rust"`.
+- Selection, mutation, topology evolution, shared-world evaluation, and the custom
+  learner interface remain available. A positive `learning_budget` requires an
+  explicit custom learner.
+- Portable MLP and graph champions retain their existing gene format. For checkpoints
+  that depend on the removed learners and champions saved by the removed integration,
+  use the version that created them.
+
+The sections below describe older release tags and their publication history.
+
+## Historical alpha-8 release
 
 GitHub tag `v0.1.0a8`. Mark this release as a prerelease.
 
@@ -18,16 +33,46 @@ GitHub tag `v0.1.0a8`. Mark this release as a prerelease.
 - Added Windows, Linux, and macOS wheel builds for the separate
   `geneticevo-core` package. The main wheel remains pure Python.
 
-See [CPU validation and benchmarks](rust_validation.md).
+See [CPU validation and benchmarks](https://github.com/JonathanBaj/geneticevo/blob/v0.1.0a8/docs/rust_validation.md).
 
-### Build and publish alpha 8
+### Publish the Rust wheels
 
-1. Push the release commit and tag `v0.1.0a8`. The Rust CPU wheels workflow
-   builds Windows, Linux, and macOS artifacts from that tag.
-2. Publish those wheels to PyPI as `geneticevo-core==0.1.0a8` so the
-   `geneticevo[rust]` extra can resolve its pinned dependency.
-3. Publish the GitHub prerelease for `v0.1.0a8`. The existing Release to PyPI
-   workflow publishes the main `geneticevo==0.1.0a8` distribution.
+Register a pending GitHub Trusted Publisher in your
+[PyPI publishing settings](https://pypi.org/manage/account/publishing/).
+
+| PyPI field | Value |
+| --- | --- |
+| PyPI project name | `geneticevo-core` |
+| Owner | `JonathanBaj` |
+| Repository name | `geneticevo` |
+| Workflow filename | `rust-wheels.yml` |
+| Environment name | `pypi` |
+
+To publish the existing alpha 8 tag, run **Rust CPU wheels** from the
+`main` branch with `release_tag=v0.1.0a8`. It checks out that tag, tests
+the Windows, Linux, and macOS wheels, and publishes them to PyPI. The
+matching core release makes the already-published `geneticevo[rust]`
+extra installable.
+
+For a one-time manual upload, download and extract the three
+[alpha 8 wheel artifacts](https://github.com/JonathanBaj/geneticevo/actions/runs/45739212873)
+into one directory. Run this command there and enter your PyPI API token
+when prompted. The first upload needs an account-scoped token.
+
+```sh
+python -m twine upload --repository pypi -u __token__ "geneticevo_core-0.1.0a8-*.whl"
+```
+
+After publishing the core, verify that the extra can install from PyPI on
+a supported platform:
+
+```sh
+python -m pip install "geneticevo[rust]==0.1.0a8"
+```
+
+For future releases, push the version tag and wait for **Rust CPU wheels**
+to publish the core before publishing the GitHub release. The **Release to
+PyPI** workflow publishes the main `geneticevo` package.
 
 ## Historical alpha-7 release preparation
 
@@ -65,7 +110,7 @@ and 25 subtests**, with **zero failures, errors, or skips**, on the RTX 4060 Lap
 GPU. All six CUDA example variants passed and their saved champions ran on CPU.
 Checks include mixed-depth gradients/Adam, lifetime growth/pruning, native/hybrid
 environments, both inheritance modes, and exact checkpoint resume. See the
-[CUDA report](cuda_depth_validation_2026-11-11.md) and its JSON source hashes.
+[CUDA report](https://github.com/JonathanBaj/geneticevo/blob/v0.1.0a8/docs/cuda_depth_validation_2026-11-11.md) and its JSON source hashes.
 That report retains the measured `0.1.0a6` working-tree version; historical
 validation and benchmark metadata is not relabeled for alpha 7.
 
@@ -144,7 +189,7 @@ Prepared locally on 2026-11-06. Both `pyproject.toml` and
 
 This release adds opt-in accelerated CPU/CUDA population PPO, fixed-capacity
 masked neural growth, reproducible population chunks, and GPU benchmark/profile
-tooling. [GPU correctness and measured results](accelerated_ppo_benchmarks_2026-11-05.md)
+tooling. [GPU correctness and measured results](https://github.com/JonathanBaj/geneticevo/blob/v0.1.0a8/docs/accelerated_ppo_benchmarks_2026-11-05.md)
 cover the implementation. Historical benchmark metadata retains its recorded
 versions; it is not relabeled for this release.
 
@@ -231,7 +276,7 @@ CUDA execution and bounded performance measurements were validated on 2026-10-30
 with an NVIDIA GeForce RTX 4060 Laptop GPU, driver 555.97, and PyTorch
 2.12.1+cu126. This includes native and hybrid inference/PPO, discrete and
 continuous actions, neural growth, checkpoint resume, and SB3 PPO/DQN. See
-[CUDA validation](cuda_validation.md) for exact results and reproduction commands.
+[CUDA validation](https://github.com/JonathanBaj/geneticevo/blob/v0.1.0a8/docs/cuda_validation.md) for exact results and reproduction commands.
 
 On machines without usable CUDA, hardware-only cases skip and CPU checks still
 run. These measurements establish the tested configurations on this machine;
@@ -264,7 +309,7 @@ The earlier alpha-1 build was validated locally on 2026-10-20:
   advertised unavailable-device error path also passed. CUDA execution and
   performance remain **unverified**.
 
-Historical timings in `benchmark_snapshot.json` retain the pre-alpha build
+Historical timings in the [archived benchmark snapshot](https://github.com/JonathanBaj/geneticevo/blob/v0.1.0a8/docs/benchmark_snapshot.json) retain the pre-alpha build
 version they were measured with; packaging edits do not constitute new
 performance evidence.
 

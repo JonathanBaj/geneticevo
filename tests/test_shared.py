@@ -93,23 +93,6 @@ class SharedTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             world.step({"left": 0, "right": 0}, np.random.default_rng(0))
 
-    def test_fixed_communication_sb3_learning(self):
-        try:
-            import torch
-            from geneticevo.integrations.sb3 import SB3AgentFactory, SB3Learner
-        except ImportError:
-            self.skipTest("SB3 unavailable")
-        torch.set_num_threads(1)
-        evaluator = SharedEvaluator(SignalWorld, (SignalPartner(),), MessageChannel(), observed_signal_message)
-        result = Evolution(env_factory=shared_env, evaluator=evaluator,
-            agent_factory=SB3AgentFactory("PPO", {"n_steps": 8, "batch_size": 8, "n_epochs": 1,
-                                                  "policy_kwargs": {"net_arch": [4]}}),
-            learner=SB3Learner(), config=EvolutionConfig(population_size=2, generations=1, elite_count=1,
-                learning_budget=8, evaluation_episodes=1)).run()
-        self.assertEqual(result.history[0]["training_interactions"], 32)
-        self.assertEqual(result.history[0]["learner_metrics"]["focal_interactions"], 8)
-        self.assertEqual(result.history[0]["learner_metrics"]["world_steps"], 8)
-
 
 if __name__ == "__main__":
     unittest.main()

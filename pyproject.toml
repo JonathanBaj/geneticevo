@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geneticevo"
-version = "0.1.0a8"
-description = "Reproducible evolutionary experiments with Rust-accelerated CPU learning"
+version = "0.1.0a9"
+description = "Reproducible evolutionary experiments with optional Rust and tensor evaluation"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -29,9 +29,8 @@ Issues = "https://github.com/JonathanBaj/geneticevo/issues"
 Changelog = "https://github.com/JonathanBaj/geneticevo/releases"
 
 [project.optional-dependencies]
-rust = ["geneticevo-core==0.1.0a8"]
+rust = ["geneticevo-core==0.1.0a9"]
 torch = ["torch>=2.12,<2.13"]
-sb3 = ["stable-baselines3>=2.9,<2.10", "torch>=2.12,<2.13"]
 shared = ["pettingzoo>=1.24,<1.26"]
 plot = ["matplotlib>=3.10,<3.11"]
 dev = ["pytest>=8,<10", "build>=1,<2"]

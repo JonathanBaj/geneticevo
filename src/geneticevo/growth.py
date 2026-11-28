@@ -15,10 +15,11 @@ import numpy as np
 class NeuralGrowth:
     """Edit width or depth at a completed learning-update boundary.
 
-    check_every counts actual environment interactions per individual, rounded
-    up to a completed PPO rollout. None for value_loss_threshold means scheduled
-    growth; a threshold requires mean rollout-update value loss at least that
-    large. Architecture is inherited independently of learned-weight inheritance.
+    check_every counts actual environment interactions per individual, checked
+    at an update boundary chosen by the custom learner. None for
+    value_loss_threshold means scheduled growth. A threshold uses the value
+    loss supplied by the learner. Architecture is inherited independently of
+    learned-weight inheritance.
     mutation_probability applies to each hidden width at birth; the separate
     layer_mutation_probability enables one depth edit. Lifetime shrink/add-layer/
     remove-layer probabilities reserve portions of the event distribution; the
@@ -87,7 +88,7 @@ class NeuralGrowth:
             raise ValueError('NeuralGrowth requires integer hidden sizes and depth within its min/max bounds')
 
     def after_update(self, agent, interactions, value_loss, rng, *, before_edit=None):
-        """Called by NativePPO after an update; custom learners may also use it.
+        """Call at a safe update boundary in a custom learner.
 
         Training counters belong to the individual and reset on fresh clones.
         Return True if the architecture changed. Evaluation never calls this.

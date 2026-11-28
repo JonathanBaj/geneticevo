@@ -3,22 +3,20 @@ from __future__ import annotations
 
 import copy
 from contextlib import nullcontext
-from dataclasses import asdict, dataclass
 from pathlib import Path
 import pickle
 import time
-from typing import Callable
 
 import numpy as np
 
 from .core import EvolutionConfig, Individual, scenarios_for, seed_for
-from .agents import MLPAgent, MLPAgentFactory, architecture_groups
-from .graph import GraphAgent, GraphAgentFactory
+from .agents import MLPAgent, architecture_groups
+from .graph import GraphAgent
 from .evaluation import GymEvaluator
 from .evolution import GaussianMutation, select, parameter_distance
 from .execution import evaluate_population
 from .results import Result, load_checkpoint, save_checkpoint, software_metadata, write_json, json_default, describe
-from .rust_ppo import RustNativePPO, evaluate_rust, require_extension
+from .rust_eval import evaluate_rust, require_extension
 import json
 
 
@@ -28,26 +26,19 @@ class Evolution:
     Stops and checkpoints happen after complete generations. Time/interaction
     caps may therefore overshoot by a generation, and requested learning budgets
     may round to backend update boundaries. All actual costs are recorded.
-    A positive budget defaults to Rust PPO for built-in CPU neural agents
-    with a Gymnasium environment when the learner and backend are omitted.
     """
 
     def __init__(self, *, agent_factory, env_factory=None, config=None, mutation=None,
-                 learner=None, evaluator=None, backend=None, device="cpu",
+                 learner=None, evaluator=None, backend="serial", device="cpu",
                  environment_device="cpu", tensor_env_factory=None, training_env_factory=None,
                  selection_hook=None, crossover=None, validation_sampler=None, archive_sampler=None,
                  callbacks=(), initial_agents=()):
+        backend = "serial" if backend is None else backend
         self.config = config or EvolutionConfig()
         self.agent_factory = agent_factory
         self.env_factory = env_factory
         self.training_env_factory = training_env_factory or env_factory
         self.mutation = mutation if mutation is not None else GaussianMutation()
-        if (learner is None and self.config.learning_budget and backend in (None, "rust")
-                and isinstance(agent_factory, (MLPAgentFactory, GraphAgentFactory))
-                and env_factory is not None and tensor_env_factory is None and device == environment_device == "cpu"):
-            learner = RustNativePPO(env_copies=self.config.env_copies)
-        if backend is None:
-            backend = "rust" if isinstance(learner, RustNativePPO) and evaluator is None else "serial"
         self.learner = learner
         self.evaluator = evaluator or (GymEvaluator(env_factory, self.config.max_episode_steps) if env_factory else None)
         self.backend, self.device, self.environment_device = backend, device, environment_device
@@ -77,30 +68,25 @@ class Evolution:
         self._validate()
 
     def _validate(self):
-        rust_learner = isinstance(self.learner, RustNativePPO)
         if self.evaluator is None:
             raise ValueError("Supply env_factory or a functional evaluator")
         if self.backend not in ("serial", "parallel", "batched", "rust"):
             raise ValueError("backend must be serial, parallel, batched or rust")
         if self.config.learning_budget and self.learner is None:
-            raise ValueError("learning_budget requires a learner")
+            raise ValueError("learning_budget requires an explicit custom learner")
         if self.learner is not None and (not self.config.learning_budget or not self.training_env_factory):
             raise ValueError("Learners require a positive per-individual learning_budget and training_env_factory")
         if len(self.initial_agents) > self.config.population_size:
             raise ValueError("Too many initial agents")
-        if rust_learner and self.backend == "batched":
-            raise ValueError("Use backend='rust', 'serial', or 'parallel' with RustNativePPO")
         if self.backend != "batched" and self.tensor_env_factory is not None:
             raise ValueError("tensor_env_factory requires backend='batched'")
         if self.environment_device != "cpu" and self.tensor_env_factory is None:
             raise ValueError("Python environments execute on CPU; a tensor_env_factory is required for an environment device")
-        if self.backend == "rust" or rust_learner:
+        if self.backend == "rust":
             if self.device != "cpu" or self.environment_device != "cpu":
                 raise ValueError("Rust execution requires CPU policy and environment devices")
-            if self.backend == "rust" and self.env_factory is None:
+            if self.env_factory is None:
                 raise ValueError("backend='rust' requires a Gymnasium env_factory")
-            if self.learner is not None and not rust_learner:
-                raise ValueError("backend='rust' requires RustNativePPO for lifetime learning")
             require_extension()
         if self.backend == "batched" or self.device != "cpu":
             from .tensor import resolve_device
@@ -123,11 +109,6 @@ class Evolution:
         if self.learner is not None and hasattr(self.learner, "env_copies"):
             if self.learner.env_copies != self.config.env_copies:
                 raise ValueError("config.env_copies must match learner.env_copies")
-        if self.learner is not None and hasattr(self.learner, "learn_population"):
-            if not self.config.elite_learning and not rust_learner:
-                raise ValueError("Native batched learning requires elite_learning=True")
-            if self.learner.device != self.device:
-                raise ValueError("Learner device must match policy device")
 
     def _new(self, agent, generation, parents=(), mutation=None):
         individual = Individual(f"i{self.next_id:08d}", agent, generation, parents, mutation or {})
@@ -161,12 +142,12 @@ class Evolution:
                 if self.crossover is not None:
                     raise ValueError('Graph brains currently require crossover=None')
                 if agent.growth and self.learner and not getattr(self.learner, 'supports_graph_growth', False):
-                    raise ValueError('GraphGrowth requires NativePPO or a custom learner with supports_graph_growth=True')
+                    raise ValueError('GraphGrowth requires a custom learner with supports_graph_growth=True')
             if isinstance(agent, MLPAgent) and agent.growth is not None:
                 if self.crossover is not None:
                     raise ValueError('NeuralGrowth currently requires crossover=None')
                 if self.learner and not getattr(self.learner, 'supports_neural_growth', False):
-                    raise ValueError('NeuralGrowth requires NativePPO or a custom learner with supports_neural_growth=True')
+                    raise ValueError('NeuralGrowth requires a custom learner with supports_neural_growth=True')
             if index < len(self.initial_agents):
                 initial = self.initial_agents[index]
                 if isinstance(agent, GraphAgent) and isinstance(initial, GraphAgent):
@@ -185,43 +166,33 @@ class Evolution:
                     raise ValueError("Initial checkpoint agent is incompatible with the configured factory")
                 if hasattr(initial, "layout") and initial.layout() != agent.layout():
                     raise ValueError("Initial neural architecture does not match")
-                if hasattr(initial, "algorithm_name") and (initial.algorithm_name != agent.algorithm_name or
-                        initial.observation_space != agent.observation_space or initial.action_space != agent.action_space or
-                        describe(initial.kwargs) != describe(agent.kwargs)):
-                    raise ValueError("Initial SB3 policy configuration does not match")
                 agent.genome.assign(initial.genome.vector())
             if self.learner:
                 self.learner.validate(agent, self.training_env_factory, self.backend)
             elif self.backend != "batched" and self.device != "cpu" and isinstance(agent, (MLPAgent, GraphAgent)):
                 raise ValueError("NumPy policies use CPU; select backend='batched' for tensor policy execution")
             self.population.append(self._new(agent, 0))
-        if self.backend == "batched" and not getattr(self.learner, "accelerated", False):
+        if self.backend == "batched":
             from .tensor import build_policy
             agents = [x.agent for x in self.population]
             for indices in architecture_groups(agents):
                 build_policy([agents[i] for i in indices], self.device)
-        # Accelerated learning validates and constructs its policy per chunk.
-        # Building and discarding another GPU copy here duplicates setup work.
 
     def _evaluate(self, agents, scenarios, generation):
         action_seed = seed_for(self.config.seed, "validation", generation)
         if self.backend == "batched":
             from .tensor import evaluate_batched
             return evaluate_batched(agents, scenarios, self.env_factory, self.tensor_env_factory,
-                self.device, self.config.env_copies, self.config.max_episode_steps,
-                population_chunk_size=getattr(self.learner, "population_chunk_size", None),
-                masked=getattr(self.learner, "accelerated", False),
-                growth_capacity=getattr(self.learner, "growth_capacity", None))
+                self.device, self.config.env_copies, self.config.max_episode_steps)
         if self.backend == "rust":
             return evaluate_rust(agents, scenarios, self.env_factory, self.config.env_copies,
-                                 self.config.max_episode_steps, self.learner)
+                                 self.config.max_episode_steps)
         if hasattr(self.evaluator, "evaluate_population"):
             return self.evaluator.evaluate_population(agents, scenarios, action_seed)
         return evaluate_population(self.evaluator, agents, scenarios, action_seed,
                                    self.backend, self.config.workers)
 
     def _learn(self, generation):
-        self._learning_phase_timings = {}
         agents, indices = [], []
         for index, individual in enumerate(self.population):
             agent = individual.agent
@@ -232,33 +203,12 @@ class Evolution:
                 indices.append(index)
         reports = []
         if self.learner:
-            if isinstance(self.learner, RustNativePPO):
-                if indices:
-                    reports = self.learner.learn_population(
-                        [agents[i] for i in indices], self.training_env_factory, None,
-                        self.config.learning_budget, self.config.seed, generation,
-                        member_ids=[int(self.population[i].id[1:]) for i in indices],
-                        timings=self._learning_phase_timings if self.learner.measure_phases else None,
-                    )
-            elif hasattr(self.learner, "learn_population"):
-                if len(indices) != len(agents):
-                    raise ValueError("Native batched learning requires elite_learning=True")
-                options = {}
-                if getattr(self.learner, "measure_phases", False):
-                    options["timings"] = self._learning_phase_timings
-                if getattr(self.learner, "accelerated", False):
-                    options["member_ids"] = [int(x.id[1:]) for x in self.population]
-                # learn_population and _evaluate finish every chunk before
-                # fitness is assigned or reproduction/selection can run.
-                reports = self.learner.learn_population(agents, self.training_env_factory, self.tensor_env_factory,
-                    self.config.learning_budget, self.config.seed, generation, **options)
-            else:
-                for index in indices:
-                    numeric_id = int(self.population[index].id[1:])
-                    report = self.learner.learn(agents[index], self.training_env_factory, self.config.learning_budget,
-                                                seed_for(self.config.seed, "training", generation, numeric_id),
-                                                seed_for(self.config.seed, "actions", generation, numeric_id))
-                    reports.append(report)
+            for index in indices:
+                numeric_id = int(self.population[index].id[1:])
+                report = self.learner.learn(agents[index], self.training_env_factory, self.config.learning_budget,
+                                            seed_for(self.config.seed, "training", generation, numeric_id),
+                                            seed_for(self.config.seed, "actions", generation, numeric_id))
+                reports.append(report)
             self.training_interactions += sum(r.interactions for r in reports)
         if self.config.inheritance == 'baldwinian':
             for index, (individual, learned) in enumerate(zip(self.population, agents)):
@@ -416,7 +366,6 @@ class Evolution:
             with self._profile_phase("learning"):
                 agents, reports = self._learn(generation)
             timings["learning_seconds"] = time.perf_counter() - part
-            timings.update({"learning_" + key: value for key, value in self._learning_phase_timings.items()})
             part = time.perf_counter()
             with self._profile_phase("evaluation"):
                 evaluations = self._evaluate(agents, scenarios, generation)

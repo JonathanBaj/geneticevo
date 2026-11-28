@@ -1,7 +1,6 @@
-"""Sparse connectivity, structural plasticity, inheritance and PPO integration."""
+"""Sparse connectivity, structural plasticity, inheritance, and frozen inference."""
 from dataclasses import replace
 from functools import partial
-from pathlib import Path
 import tempfile
 import unittest
 
@@ -185,15 +184,14 @@ class GraphTests(unittest.TestCase):
 
 try:
     import torch
-    from geneticevo.ppo import NativePPO
-    from geneticevo.tensor import GraphBatchedPolicy, TensorReach1D, evaluate_batched
+    from geneticevo.tensor import GraphBatchedPolicy
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
 
 
 @unittest.skipUnless(HAS_TORCH, 'torch extra is not installed')
-class GraphPPOTests(unittest.TestCase):
+class GraphInferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         torch.set_num_threads(1)
@@ -210,107 +208,6 @@ class GraphPPOTests(unittest.TestCase):
             self.assertEqual(policy.params['weights'].numel(), sum(len(a.edges) for a in agents))
             self.assertTrue(torch.isfinite(policy.params['weights'].grad).all())
 
-    def test_grown_connections_learn_and_environment_is_not_restarted(self):
-        for continuous in (False, True):
-            growth = GraphGrowth(check_every=4, max_neurons=4, max_connections=20,
-                node_add_probability=1, node_remove_probability=0, connection_remove_probability=0,
-                connections_per_event=20)
-            agent = make_agent(growth, continuous=continuous, connections=0)
-            instances = []
-            class CountingEnv(Reach1D):
-                def __init__(self):
-                    super().__init__(horizon=50, continuous=continuous)
-                    self.resets = 0
-                    instances.append(self)
-                def reset(self, **kwargs):
-                    self.resets += 1
-                    return super().reset(**kwargs)
-            # Snapshot newly created weights at the first completed update.
-            created = {}
-            original = agent.restructure
-            def record(*args):
-                changed = original(*args)
-                if not created and agent.edges:
-                    created.update(zip(agent.edges, agent.parameters()['weights'].copy()))
-                return changed
-            agent.restructure = record
-            report = NativePPO(rollout_steps=4, epochs=1, minibatch_size=4).learn(
-                agent, CountingEnv, 12, 1, 2)
-            self.assertEqual(report.interactions, 12)
-            self.assertEqual(report.updates, 3)
-            self.assertEqual(agent.hidden_neurons, 4)
-            self.assertEqual(len(agent.edges), 20)
-            self.assertEqual(len(instances), 1)
-            self.assertEqual(instances[0].resets, 1)
-            self.assertTrue(any(v != created[e] for e, v in zip(agent.edges, agent.parameters()['weights'])))
 
-    def test_graph_pruning_during_ppo_and_variable_shape_frozen_evaluation(self):
-        growth = GraphGrowth(check_every=4, node_add_probability=0, node_remove_probability=1,
-            connection_add_probability=0, connection_remove_probability=1)
-        for continuous in (False, True):
-            agents = [make_agent(growth, continuous, i, neurons=i + 2, connections=8) for i in range(2)]
-            reports = NativePPO(rollout_steps=4, epochs=1, minibatch_size=4).learn_population(
-                agents, partial(Reach1D, continuous=continuous), None, 8, 1, 0)
-            self.assertEqual([a.hidden_neurons for a in agents], [0, 1])
-            self.assertTrue(all(r.metrics['growth_events'] == 2 for r in reports))
-            snapshots = [a.genome.vector() for a in agents]
-            scenarios = [Scenario(1), Scenario(2)]
-            factory = partial(Reach1D, horizon=3, continuous=continuous)
-            for tensor in (None, partial(TensorReach1D, horizon=3, continuous=continuous)):
-                scores = evaluate_batched(agents, scenarios, factory, tensor, env_copies=2)
-                for agent, snapshot, score in zip(agents, snapshots, scores):
-                    reference = GymEvaluator(factory).evaluate(agent, scenarios)
-                    np.testing.assert_allclose(score.returns, reference.returns, atol=1e-6)
-                    np.testing.assert_array_equal(agent.genome.vector(), snapshot)
-
-    def experiment(self, generations, mode='lamarckian', output_dir=None):
-        growth = GraphGrowth(check_every=4, max_neurons=7, max_connections=24, mutation_probability=0.5)
-        return Evolution(agent_factory=GraphAgentFactory(3, 8, growth=growth),
-            env_factory=partial(Reach1D, horizon=5), tensor_env_factory=partial(TensorReach1D, horizon=5),
-            learner=NativePPO(rollout_steps=4, epochs=1, minibatch_size=4), backend='batched',
-            config=EvolutionConfig(population_size=3, elite_count=1, immigrant_count=1,
-                generations=generations, learning_budget=8, evaluation_episodes=2,
-                inheritance=mode, diversity_pairs=3, output_dir=output_dir))
-
-    def test_evolution_checkpoint_resume_exactly_matches_uninterrupted(self):
-        for mode in ('lamarckian', 'baldwinian'):
-            complete = self.experiment(3, mode).run()
-            with tempfile.TemporaryDirectory() as directory:
-                self.experiment(1, mode, directory).run()
-                resumed = self.experiment(3, mode).run(Path(directory) / 'latest.checkpoint')
-            for a, b in zip(complete.population, resumed.population):
-                self.assertEqual(a.agent.structure, b.agent.structure)
-                self.assertEqual(a.agent.next_node_id, b.agent.next_node_id)
-                np.testing.assert_array_equal(a.agent.genome.vector(), b.agent.genome.vector())
-            self.assertEqual(complete.lineage, resumed.lineage)
-            self.assertEqual([x['mean'] for x in complete.history], [x['mean'] for x in resumed.history])
-
-    def test_accelerated_mode_rejected_clearly(self):
-        with self.assertRaisesRegex(ValueError, 'accelerated=False'):
-            NativePPO(accelerated=True).learn(make_agent(), Reach1D, 8, 0, 0)
-
-    def test_fixed_topology_ppo_batches_independent_genomes(self):
-        agents = [make_agent(seed=i) for i in range(2)]
-        snapshots = [a.genome.vector() for a in agents]
-        topology = [a.structure for a in agents]
-        reports = NativePPO(rollout_steps=4, epochs=1, minibatch_size=4).learn_population(
-            agents, Reach1D, None, 8, 1, 0)
-        for agent, snapshot, structure, report in zip(agents, snapshots, topology, reports):
-            self.assertEqual(agent.structure, structure)
-            self.assertFalse(np.array_equal(agent.genome.vector(), snapshot))
-            self.assertEqual(report.interactions, 8)
-            self.assertEqual(agent.training_state['adam']['step'], 2)
-        self.assertFalse(np.shares_memory(agents[0].genome.values, agents[1].genome.values))
-
-    @unittest.skipUnless(HAS_TORCH and torch.cuda.is_available(), 'CUDA hardware unavailable')
-    def test_cuda_learning_and_evaluation(self):
-        agent = make_agent(GraphGrowth(check_every=4))
-        report = NativePPO(device='cuda', rollout_steps=4, epochs=1, minibatch_size=4).learn_population(
-            [agent], Reach1D, TensorReach1D, 8, 0, 0)[0]
-        self.assertEqual(report.interactions, 8)
-        score = evaluate_batched([agent], [Scenario(1)], Reach1D, TensorReach1D, device='cuda')[0]
-        self.assertTrue(np.isfinite(score.fitness))
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

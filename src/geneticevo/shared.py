@@ -308,10 +308,9 @@ class SignalPartner:
 
 
 class SharedFocalEnv(gym.Env):
-    """A focal task policy learns against frozen partners in a Parallel world.
+    """A single-agent Gymnasium view of a Parallel world with frozen partners.
 
-    Messages follow fixed_message, so the learner's likelihood covers the full
-    *trainable* action. Arbitrary evolved message heads are rejected by SB3.
+    The focal action controls the task. Messages follow the supplied fixed rule.
     Each episode owns independent partner copies and a fresh channel.
     """
     metadata = {"render_modes": []}

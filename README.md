@@ -7,8 +7,8 @@ lifetime learning and population tensor execution. Supply a problem and an agent
 factory; the runner handles selection, mutation, elites, lineage, evaluation,
 metrics, archives, and checkpoints.
 
-Pure evolution requires only NumPy and Gymnasium. PyTorch, Stable-Baselines3
-(SB3), PettingZoo, and plotting are optional. The package and Python import name
+Pure evolution requires only NumPy and Gymnasium. Rust inference, PyTorch,
+PettingZoo, and plotting are optional. The package and Python import name
 are `geneticevo`. Install published releases from [PyPI](https://pypi.org/project/geneticevo/).
 
 [Documentation](https://github.com/JonathanBaj/geneticevo/blob/main/README.md) |
@@ -20,13 +20,13 @@ Evolution, learning, communication, and GPU execution do not guarantee better
 results or general intelligence. These are research tools, not deployment safety
 guarantees.
 
-## What's new in 0.1.0a8
+## What's new in 0.1.0a9
 
-Rust now powers CPU PPO by default for built-in MLPs and sparse graph policies,
-including networks that change width, depth, or connectivity during training.
-Checkpoints preserve each individual's optimizer and random streams. Use
-`--no-rust` in the PPO examples to select Torch. See [Rust CPU PPO](#rust-cpu-ppo)
-for installation and [CPU benchmarks](docs/rust_validation.md) for measured results.
+Evolution uses selection and mutation to optimize policies. The built-in PPO and
+DQN learners and the Stable-Baselines3 integration were removed. Rust and PyTorch
+can accelerate frozen policy evaluation. Width, depth, and graph topology remain
+heritable, and the custom learner interface accepts user-supplied algorithms.
+See [release notes](docs/release.md) for migration details.
 
 ## Installation
 
@@ -45,8 +45,7 @@ python -m pip install --upgrade --pre geneticevo
 Choose optional features as needed:
 
 ```sh
-python -m pip install "geneticevo[sb3]"    # PPO and DQN; includes PyTorch
-python -m pip install "geneticevo[torch]"  # Native population tensors and PPO
+python -m pip install "geneticevo[torch]"  # CPU/CUDA population inference
 python -m pip install "geneticevo[shared]" # Official PettingZoo integration
 python -m pip install "geneticevo[plot]"   # Saved plots
 ```
@@ -67,45 +66,22 @@ Activate it with `.\.venv\Scripts\Activate.ps1` on Windows PowerShell or
 python -m pip install -e ".[dev,release]"
 ```
 
-Core evolution does not install PyTorch, SB3, PettingZoo, or Matplotlib. Optional
+Core evolution installs NumPy and Gymnasium. Optional
 extras have their own upstream Python/platform requirements; for example, the
 tested PettingZoo 1.25.0 declares Python <3.13. Only Python 3.11.9 on Windows has
 been exercised here; the minimum declared Python version is not a tested matrix.
 
 ## CPU and GPU requirements
 
-- Ordinary CPU execution needs Python, NumPy, and Gymnasium. CUDA and a GPU are
-  unnecessary for vector optimization and NumPy neural evolution.
-- Native tensor inference/PPO requires the `torch` extra and works on CPU.
-  SB3 learning requires the `sb3` extra and also works on CPU.
-- The CUDA backend supports batched MLP inference, native PPO, and compatible
-  tensor environments. It requires an NVIDIA GPU, a compatible driver, and a
-  CUDA-enabled PyTorch build. Follow the [official PyTorch installation selector](https://pytorch.org/get-started/locally/)
-  before requesting CUDA; a CPU-only PyTorch build cannot use the GPU.
-- Python environments keep running on the CPU. GPU policies with Python
-  environments are hybrid execution; native tensor simulation requires a
-  compatible tensor environment. There is no general GPU speedup claim.
-- An explicitly requested unavailable device raises an actionable error.
-  Automatic CPU fallback is not used.
+Serial NumPy and process-based evaluation run on CPU. The optional Rust backend
+batches frozen policies on CPU; see [accelerated evaluation](#accelerated-evaluation)
+for installation. The `torch` extra enables batched MLP and graph inference on CPU
+or CUDA and supports compatible tensor environments.
 
-Declared ranges and tested versions:
-
-| Dependency | Declared range | Tested |
-|---|---|---|
-| NumPy | >=1.26,<3 | 2.4.4 |
-| Gymnasium | >=1.2,<1.3 | 1.2.3 |
-| PyTorch (optional) | >=2.12,<2.13 | 2.12.1+cu126, CPU and CUDA execution |
-| SB3 (optional) | >=2.9,<2.10 | 2.9.0 |
-| PettingZoo (optional) | >=1.24,<1.26 | 1.25.0 |
-| Matplotlib (optional) | >=3.10,<3.11 | 3.10.6 |
-
-Only the listed versions were exercised; the entire allowed ranges were not
-tested. CPU and CUDA execution were validated, including native/hybrid inference,
-native PPO, optional SB3 PPO/DQN, neural growth, and checkpoint resume. The CUDA
-checks ran on an NVIDIA GeForce RTX 4060 Laptop GPU with PyTorch 2.12.1+cu126
-on 2026-10-30. CUDA tests skip when no usable GPU is available. Measured results,
-hardware details, and reproduction commands are in [CUDA validation](docs/cuda_validation.md).
-See also [validation](https://github.com/JonathanBaj/geneticevo/blob/main/docs/validation.md).
+CUDA needs a supported NVIDIA GPU, driver, and CUDA-enabled PyTorch build.
+See the [official PyTorch installation selector](https://pytorch.org/get-started/locally/).
+With Gymnasium environments, policies can use CUDA while simulation runs on CPU.
+A compatible tensor environment can keep simulation and inference on the same device.
 
 ## Complete quickstart
 
@@ -147,31 +123,19 @@ enabled. Pure evolution does not use the critic for action selection.
 
 Run these from the repository after installation:
 
-```powershell
+```sh
 python examples/vector.py
 python examples/neural.py
 python examples/custom_genome.py
 python examples/custom_learner.py
 python examples/generalization.py
-python examples/sb3_learning.py --algorithm PPO
-python examples/sb3_learning.py --algorithm DQN --inheritance baldwinian
-python examples/native_ppo.py --device cpu
-python examples/native_ppo.py --continuous
-python examples/neural_growth.py --device cpu
-python examples/neural_growth.py --inheritance baldwinian
+python examples/neural_growth.py --dynamic-depth
+python examples/graph_brain.py --continuous
 python examples/shared_world.py
-python examples/shared_world.py --rl
 ```
 
-Run native PPO on a CUDA device from the source checkout:
-
-```sh
-python -c "import torch; assert torch.cuda.is_available(), 'No usable CUDA device found'"
-python examples/native_ppo.py --device cuda
-```
-
-The example sets both policy and tensor-environment devices to CUDA. An ordinary
-Python environment remains on the CPU when paired with a CUDA policy.
+Use `--backend batched --device cuda` on the growth or graph example for CUDA
+inference with Gymnasium simulation. Use `--backend rust` for native CPU inference.
 
 ## Configuration and lifecycle
 
@@ -195,8 +159,7 @@ These settings have different meanings:
 Serial evaluation visits episodes sequentially. CPU parallelism evaluates
 individuals in spawned processes. It requires pickleable top-level factories
 and an `if __name__ == "__main__":` entry point. Shared population evaluation is
-currently serial. SB3 learning runs individuals sequentially, even when fitness
-evaluation uses CPU workers.
+currently serial.
 
 Mutation probability applies **per scalar parameter**. `std` controls its
 magnitude. Tournament and rank selection honor `maximize`; custom selection,
@@ -210,109 +173,45 @@ overshoot by a generation. The first population is always evaluated. Counts
 include archive and optional pre-learning evaluation. Custom vector objectives
 consume zero environment interactions.
 
-## Learning and inheritance
+## Custom learning and inheritance
 
-Use `learner=None` and `learning_budget=0` for evolution only.
+The default run evolves policies with selection, mutation, and frozen evaluation.
+To supply your own lifetime adaptation, pass a learner implementing the
+`Learner` protocol and set a positive per-individual `learning_budget`. The
+[custom learner example](examples/custom_learner.py) uses budgeted random search.
 
-- **Lamarckian:** learned parameters replace inherited genes before reproduction.
-- **Baldwinian:** train a fresh copy; fitness and the deployed archive snapshot
-  use that copy, while reproduction uses the original genes.
-- Unchanged elites continue optimizer/counter/replay state by default and learn
-  again (`elite_learning=True`). Set it false to skip further elite learning with
-  Rust PPO or serial SB3/custom learners. Torch-native batching requires it true.
-- Mutated children and immigrants start fresh optimizer, replay/rollout,
-  exploration, counter, and random-action state. DQN targets are synchronized to
-  the child's mutated online network. Unchanged elites preserve DQN targets.
-- Environments reset at generation boundaries. Mid-episode state is not resumed.
+- **Lamarckian** inheritance passes the adapted genome to reproduction.
+- **Baldwinian** inheritance evaluates an adapted copy and breeds from the
+  original weights. Structural edits can still be inherited.
+- Unchanged elites can continue their per-agent state. Set `elite_learning=False`
+  to skip further adaptation of those elites. New offspring start with fresh
+  learner state.
 
-SB3's factory builds the algorithm's own compatible `MlpPolicy`; arbitrary NumPy
-or PyTorch modules cannot attach to it unchanged. PPO evolves its full online
-policy, including value and distribution parameters. DQN evolves its online Q
-network; target networks are algorithm state. Normalization wrappers are rejected
-until a frozen-statistics serialization adapter exists.
+The learner reports actual interactions and updates. Requested learning budgets
+and actual costs are recorded separately.
 
-PPO rounds a budget up to `rollout_steps * env_copies` (SB3 uses `n_steps`).
-Updates may occur within unfinished episodes. DQN's default step frequency is
-one; custom frequencies may overshoot. Requested and actual counts are distinct.
-With SB3, set the factory's and learner's `env_copies` to match the config.
+## Accelerated evaluation
 
-Native PPO batches independent policies, losses, gradients, clipping, and Adam.
-Adam has separate moments **and step counters** for each individual, so a fresh
-child can learn alongside an older elite. Advantages normalize per individual
-over a rollout. Discrete categorical and continuous tanh-squashed Gaussian
-likelihoods are implemented. Continuous entropy regularization uses the base
-normal's entropy; its default coefficient is zero.
+The default backend is `"serial"`. Use `"parallel"` to evaluate independent
+individuals in spawned processes, or use one of the batched neural backends:
 
-For large populations, opt in to the accelerated native path:
+- `backend="batched"` uses PyTorch. It groups agents by compatible spaces and
+  architecture. With `tensor_env_factory=TensorReach1D`, simulation and inference
+  can use the same CPU or CUDA device. Gymnasium environments run on CPU.
+- `backend="rust"` uses the optional `geneticevo-core` wheel for CPU inference
+  with Gymnasium. A Rust batch can include mixed widths, depths, and graph topologies.
+  Set `RAYON_NUM_THREADS` before launch to control the worker count.
 
-```python
-learner = NativePPO(
-    device="cuda", accelerated=True,
-    env_copies=4, rollout_steps=32, epochs=2, minibatch_size=32,
-    population_chunk_size=256,  # Optional limit on agents resident at once
-)
-```
-
-Use `backend="batched"`, matching policy/environment devices, and
-`tensor_env_factory=TensorReach1D` to keep simulation on the GPU. This path
-reuses rollout storage and actor outputs, batches critic evaluation and random
-draws over a rollout, and trains growing networks together using fixed capacity
-and per-agent masks. It also runs on CPU. Weights and Adam state remain on the
-device throughout learning; portable CPU state is exported at generation
-boundaries. All training and evaluation chunks finish before selection.
-
-The path is experimental and remains opt-in. On the tested RTX 4060 Laptop GPU,
-the 1,024-agent, 128-by-128, four-copy case ran 1.69 times faster per complete
-generation than native CUDA and 1.48 times faster than accelerated four-thread
-CPU. Small networks often favor CPU. [Measured results](docs/accelerated_ppo_benchmarks_2026-11-05.md)
-include the full matrix, ablations, memory, growth, and profiling.
-[Benchmark commands and limitations](docs/accelerated_ppo.md) explain reproduction.
-
-## Rust CPU PPO
-
-From a source checkout, install the main package and the optional core with a
-Rust toolchain and platform linker available:
+Archives evaluate with the serial CPU reference. A compatible core wheel
+installs with `python -m pip install --pre "geneticevo[rust]==0.1.0a9"` once
+the matching releases are on PyPI. For a source checkout with a Rust toolchain:
 
 ```sh
 python -m pip install . ./rust
-python examples/neural_growth.py --dynamic-depth
+python examples/neural_growth.py --backend rust --dynamic-depth
 ```
 
-Install the alpha with Rust from PyPI once the matching `geneticevo-core` wheel
-is published:
-
-```sh
-python -m pip install --pre "geneticevo[rust]==0.1.0a8"
-```
-
-A compatible wheel requires only CPython and the ordinary geneticevo
-dependencies at runtime.
-
-The `native_ppo.py`, `neural_growth.py`, and `graph_brain.py` examples use Rust
-by default on CPU. Pass `--no-rust` to select Torch PPO. The `--device cuda` and
-`--accelerated` options also select Torch where supported.
-
-In `Evolution`, a positive `learning_budget` selects Rust PPO for a built-in MLP
-or graph factory with a CPU Gymnasium environment when `learner` and `backend`
-are omitted. The default learner uses `config.env_copies`.
-Pass `learner=RustNativePPO(...)` to customize
-PPO settings, or pass `learner=NativePPO(...), backend="batched"` to use Torch.
-The Rust backend supports changing widths, depths, and graph topology, and
-discrete and bounded continuous actions. Training and frozen selection use Rust
-policy kernels, and archives use the NumPy reference evaluator.
-Set `population_chunk_size` on the learner to bound live population memory, and
-set `RAYON_NUM_THREADS` before launch to control Rust's worker count.
-
-On a Ryzen 9 8945HS with four worker threads, the growing-network benchmark
-ran 3.27–4.43× faster per complete generation than accelerated Torch PPO with
-the same Gymnasium environment. The measured cases covered 16 to 1,024 agents
-and initial hidden widths of 4 to 256. See [Rust PPO validation](docs/rust_validation.md)
-for the matrix and comparisons with Torch tensor simulation.
-
-## Optional lifetime network growth
-
-Enable growth on the built-in MLP factory; `growth=None` (the default) retains
-fixed-size networks and the existing behavior:
+## Optional network growth
 
 ```python
 from geneticevo import NeuralGrowth
@@ -321,105 +220,26 @@ from geneticevo.agents import MLPAgentFactory
 factory = MLPAgentFactory(
     hidden_sizes=(4, 4),
     growth=NeuralGrowth(
-        check_every=32,             # Actual training transitions per individual
-        neurons_per_growth=2,       # Neurons added/removed in a selected width edit
-        max_hidden_size=32,         # Hard cap per hidden layer
-        min_hidden_size=2,          # Lower width bound for lifetime/birth edits
-        value_loss_threshold=None, # Scheduled growth; use a number to gate on value loss
-        mutation_probability=0.1,   # Probability per layer at reproduction
-        mutation_step=2,            # Add or remove 1..2 neurons on a mutation
-        shrink_probability=0.2,     # Lifetime width shrinking
-        layer_add_probability=0.25,
-        layer_remove_probability=0.25,
-        min_hidden_layers=0,       # Zero permits a direct linear policy
-        max_hidden_layers=4,
-        new_layer_size=4,
-        layer_mutation_probability=0.25, # Add/remove a layer at reproduction
+        min_hidden_size=2, max_hidden_size=32,
+        mutation_probability=0.10, mutation_step=2,
+        min_hidden_layers=0, max_hidden_layers=4,
+        layer_mutation_probability=0.25, new_layer_size=4,
     ),
 )
 ```
 
-Pass this factory to `Evolution` with a positive `learning_budget` to use Rust
-PPO on CPU, or select `NativePPO` with `backend="batched"` and the `torch` extra.
-See [the growth example](examples/neural_growth.py).
+With `growth=NeuralGrowth(...)`, offspring can mutate hidden widths and add or
+remove a hidden layer before scalar gene mutation. Stable layer IDs preserve
+surviving genes as indices shift. Expanding a layer initializes new incoming
+weights and zeros the new outgoing connections to existing neurons, preserving
+policy and value outputs at first. Shrinking or changing depth can change
+outputs. Sizes, IDs, lineage, and parameter counts are tracked in the saved data.
 
-```sh
-python examples/neural_growth.py --device cpu
-python examples/neural_growth.py --continuous --inheritance baldwinian
-python examples/neural_growth.py --value-loss-threshold 0.5
-python examples/neural_growth.py --dynamic-depth --accelerated --device cpu
-python examples/neural_growth.py --dynamic-depth --no-rust
-```
-
-During training, architecture edits are checked after completed PPO rollouts.
-One eligible event is selected: widen or narrow a layer, insert a hidden layer,
-or remove one. The shrink/add-layer/remove-layer probabilities must sum to at
-most one; the remaining probability selects width growth. Probabilities are
-renormalized over eligible events at the configured bounds. Checks round up to
-a rollout boundary and perform at most one event at a time, in both actor and
-critic networks. New neurons in an existing layer receive random incoming
-weights and zero outgoing weights into existing neurons, preserving the current
-policy and value outputs at the moment of growth. Later updates can learn to
-use them. The environment continues without resetting when the network grows.
-Width shrinking crops neurons and reconnects the overlapping inputs/outputs.
-New layers can be inserted at any position, with identity-shaped incoming
-weights and zero biases. Layers can also be removed at any position. Surviving
-layers retain stable IDs, and output-head parameters retain their separate role
-when layer indices shift. Insertion adds a tanh operation; depth changes and
-shrinking can immediately change behavior. Adam moments reset for an edited
-individual; training counters and its live environment continue.
-
-The new probabilities default to zero to preserve existing width-only runs.
-`min_hidden_layers=1` and `max_hidden_layers=8` are the default depth bounds.
-Set `min_hidden_layers=0` to permit removal of every hidden layer.
-
-By default, growth is scheduled. Set `value_loss_threshold` to require the mean
-value loss across that rollout's PPO updates to meet the threshold before
-editing the architecture. This is a learning-error heuristic, not a measurement of
-novelty, intelligence, or a biological model. Larger networks need more memory
-and may perform worse; choose a suitable width cap.
-
-The agent's final **hidden-layer widths, depth, and IDs** become inherited traits
-in both modes: Lamarckian offspring inherit learned weights and architecture;
-Baldwinian offspring inherit the architecture while retaining birth genes in
-surviving layers and initializing new capacity afresh. Birth mutations can change
-widths and, with `layer_mutation_probability`, add or remove one layer before
-normal parameter mutation. Observation and action sizes stay fixed. The growth settings themselves
-are configuration, not mutated traits. Elites keep their sizes; immigrants use
-the factory's starting sizes. Fresh children reset growth and optimizer counters.
-
-By default, growth-enabled agents learn individually, with environment copies
-batched on the selected CPU/CUDA device. `NativePPO(accelerated=True)` also batches
-different widths and depths using bounded hidden slots, masks, and a separate
-output head per individual. It exports trained genes at dynamic edit boundaries,
-then imports the edited member into the same tensors and resets only its Adam
-state. `growth_capacity`, if supplied, must cover all reachable depths and widths.
-This reserves more memory as the configured depth/width bounds increase.
-
-Saving/loading, archives, and generation-boundary resume include layer identities.
-Legacy agent saves without IDs load with sequential IDs. CPU checks cover both
-PPO paths with variable depth. The new depth/shrink behavior and graph brains
-passed [CUDA validation on 2026-11-11](docs/cuda_depth_validation_2026-11-11.md)
-on an RTX 4060 Laptop GPU, including exact checkpoint resume and portable saves.
-[Earlier CUDA validation](docs/cuda_validation.md) retains its width-growth context.
-
-Automatic lifetime growth currently supports the built-in MLP with native PPO.
-Custom MLP learners can opt in with `supports_neural_growth=True` and call
-`agent.growth.after_update(agent, interactions, value_loss, rng)` at safe update
-boundaries; the same hook now supports width shrinking and layer edits. SB3 policies and communicating task-policy wrappers do not support
-this feature. `crossover` must remain `None`. With `learner=None`, offspring size
-mutations still work, but networks do not grow during frozen evaluation.
-
-Metrics record `network_hidden_sizes`, `network_parameter_counts`, and learner
-`growth_events` and `hidden_layers` (mean per trained individual per generation).
-Learner metrics also separate `width_growth_events`, `width_shrink_events`,
-`layers_added`, and `layers_removed` for the current training call.
-Lineage records widths and layer IDs before/after each offspring mutation. Agent
-folders retain sizes, IDs, the next ID, and growth configuration; training counters
-require a full checkpoint. For different architectures, sampled parameter
-distances align surviving layers by identity and keep the output head separate,
-treating missing parameters as zeros. Within each matched layer, parameters align by
-neuron index, treating missing neurons as zeros.
+A custom learner can opt into lifetime edits with `supports_neural_growth=True`
+and call `agent.growth.after_update(agent, interactions, value_loss, rng)` at an
+update boundary. `check_every` counts actual interactions and an optional
+`value_loss_threshold` uses the loss supplied by the learner. Keep
+`crossover=None` for growth-enabled agents.
 
 ## Sparse graph brains
 
@@ -436,7 +256,7 @@ factory = GraphAgentFactory(
     initial_connections=24,
     settling_steps=4,
     growth=GraphGrowth(
-        check_every=32,     # Actual training interactions, checked after PPO updates
+        check_every=32,     # Interaction interval for a custom learner
         min_neurons=0,
         max_neurons=64,
         max_connections=512,
@@ -449,19 +269,15 @@ factory = GraphAgentFactory(
 )
 ```
 
-Use this factory with `Evolution` and a positive `learning_budget`.
-Rust PPO is the default for CPU Gymnasium runs. `NativePPO(accelerated=False)`
-with `backend="batched"` supports CPU/CUDA policies and Python/tensor
-environments. Both support discrete and continuous actions.
+Use this factory with `Evolution` to evolve connectivity at reproduction:
 
 ```sh
-python examples/graph_brain.py --device cpu
-python examples/graph_brain.py --continuous --inheritance baldwinian
-python examples/graph_brain.py --no-rust
+python examples/graph_brain.py
+python examples/graph_brain.py --continuous --backend rust
 ```
 
-At each eligible learning boundary, independent random proposals add/remove
-hidden neurons and add/remove edges. `neurons_per_event` (default 1) and
+At reproduction, independent random proposals add or remove hidden neurons and
+connections. Custom learners can also call the lifetime growth hook. `neurons_per_event` (default 1) and
 `connections_per_event` (default 2) bound each proposal. Pruning removes incident
 edges; additions initialize new edge weights randomly. Surviving genes retain
 their neuron/edge identities. Structural edits can change behavior immediately,
@@ -489,46 +305,23 @@ budget cannot carry that observation to a readout. There is no memory across
 environment steps. This models flexible connectivity, not biological development
 or a connectome reconstruction.
 
-Torch graph PPO trains growing individuals separately and groups frozen evaluation
-by compatible node/edge counts. Rust graph PPO batches mixed topologies.
-`NativePPO(accelerated=True)`, SB3, communicating wrappers, and crossover are
-unsupported. Custom learners can opt in with
-`supports_graph_growth=True` and call `agent.growth.after_update(...)` at safe
-update boundaries. Save/load, initial agents, archives, diversity measurements,
-and generation checkpoints retain topology. Generation records contain
-`network_neuron_counts` (including readouts), `network_connection_counts`, and
-`network_parameter_counts`; learner metrics include `growth_events`,
-`hidden_neurons`, and `connections`. Lineage records the added/removed neuron IDs
-and edges. Full checkpoints retain optimizer and growth counters.
+Custom learners can opt into lifetime graph edits with `supports_graph_growth=True`
+and call `agent.growth.after_update(...)` at safe update boundaries. Keep
+`crossover=None` for graph agents. Generation records include neuron, connection,
+and parameter counts. Lineage records added and removed neuron IDs and edges.
 
 ## Supported combinations
 
-| Agents / learner | Serial CPU | CPU process evaluation | Batched policies, Python env | Tensor environment |
-|---|---|---|---|---|
-| Vector objective / none | Yes | Yes | No | No |
-| NumPy MLP / none | Yes | Yes | Yes | Yes |
-| Sparse graph / none | Yes | Yes | Yes | Yes |
-| SB3 PPO or DQN / SB3Learner | Yes | Yes; learning stays sequential | No | No |
-| MLP / NativePPO | No | No | Yes | Yes |
-| Sparse graph / NativePPO | No | No | Yes | Yes |
-| MLP or sparse graph / RustNativePPO | Yes | Yes | Yes | No |
-| Evolved message head / none | Shared serial | No | No | No |
-| SB3 task policy / fixed messages | Shared serial | No | No | No |
+| Agent kind | Serial CPU | CPU process evaluation | Torch batches | Rust batches |
+| --- | --- | --- | --- | --- |
+| Vector objective | Yes | Yes |  |  |
+| MLP with fixed or mutable topology | Yes | Yes | Yes | Yes |
+| Sparse graph | Yes | Yes | Yes | Yes |
+| Evolved message head | Shared serial |  |  |  |
 
-Neural observations must be flat `Box`; actions must be zero-start `Discrete` or
-flat, finite, strictly bounded `Box`. DQN supports `Discrete` only. Shared worlds
-use the PettingZoo Parallel protocol with flat `Box` observations. Other spaces
-need explicit tested adapters.
-
-`backend="batched"` groups compatible neural architectures for evaluation. Fixed-size
-learning uses population batches; growth-enabled policies learn individually by
-default. MLPs can use masked population batches with `NativePPO(accelerated=True)`.
-Tensor computation also runs on CPU. Omitting `tensor_env_factory` uses `GymTensorBridge`: Python simulation
-stays on CPU even if policies run on CUDA. This is labeled hybrid execution.
-Setting a device never migrates arbitrary Python simulation code. Native tensor
-environments require matching policy/environment devices. The included
-`TensorReach1D` has a matching CPU reference. Archives always use the serial CPU
-reference evaluator, including for tensor runs.
+Neural observations use a flat `Box`. Actions use zero-start `Discrete` or a flat,
+finite, strictly bounded `Box`. Shared worlds use the PettingZoo Parallel protocol
+with flat `Box` observations.
 
 ## Shared worlds and communication
 
@@ -547,12 +340,8 @@ testing. `reward_mode` chooses focal-individual or mean-team reward. World steps
 and all active-agent transitions are counted separately; inactive roles do not
 act. Explicit focal-to-role mappings are retained in evaluation details.
 
-The tested multi-agent learning integration is PPO/DQN on `SharedFocalEnv` against
-frozen partners with **fixed message rules**. The learner trains task actions;
-messages have no trainable distribution. End-to-end learned stochastic messages
-and simultaneous RL of distinct communicating policies are unsupported.
-Experience sharing, parameter averaging, imitation, and global memory are not
-part of communication.
+`SharedFocalEnv` exposes a single focal agent against frozen partners through
+Gymnasium. A supplied fixed message rule handles outgoing messages in that view.
 
 ## Results, checkpoints, and generalization
 
@@ -580,7 +369,7 @@ RNG state, IDs, lineage, and counters. Scalar settings and component description
 are checked on restore. Custom components should expose configuration as public
 fields on stable classes; arbitrary hidden global or closure state cannot be
 verified. Load only trusted checkpoints: they use Python pickle. Agent folders
-save inference genomes; continuing optimizer/replay state requires a checkpoint.
+save inference genomes; continuing custom learner state requires a checkpoint.
 Bitwise reproducibility across devices, versions, and platforms is not promised.
 
 Training uses a separate `training_env_factory` (defaults to `env_factory`).
@@ -618,8 +407,7 @@ python benchmarks/baselines.py --seeds 1 2 3
 Windows sandbox restrictions may prevent spawned worker pipes; use an ordinary
 local terminal for process tests. [Architecture and extensions](https://github.com/JonathanBaj/geneticevo/blob/main/docs/architecture.md)
 explain custom genomes/environments/learners. [Validation](https://github.com/JonathanBaj/geneticevo/blob/main/docs/validation.md)
-documents correctness checks and benchmark methodology. [Delivery report](https://github.com/JonathanBaj/geneticevo/blob/main/docs/report.md)
-records measured results and remaining limitations.
+documents correctness checks and benchmark methodology.
 The [alpha release checklist](https://github.com/JonathanBaj/geneticevo/blob/main/docs/release.md) records packaging checks and the
 current release checks and hardware validation status.
 

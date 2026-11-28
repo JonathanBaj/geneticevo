@@ -242,7 +242,6 @@ class GraphAgent:
         self.next_node_id = max(self.next_node_id, next_node_id)
         if hasattr(self, 'training_state'):
             self.training_state.pop('adam', None)
-            self.training_state.pop('rust_ppo', None)
         return True
 
     def inherit_structure(self, learned, rng):

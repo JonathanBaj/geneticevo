@@ -114,7 +114,7 @@ class CoreTests(unittest.TestCase):
 import sys, importlib.abc
 class Block(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname.split('.')[0] in {'torch', 'stable_baselines3', 'pettingzoo', 'matplotlib'}:
+        if fullname.split('.')[0] in {'torch', '_geneticevo_rust', 'pettingzoo', 'matplotlib'}:
             raise ImportError('blocked optional dependency: ' + fullname)
 sys.meta_path.insert(0, Block())
 from geneticevo import Evolution, EvolutionConfig

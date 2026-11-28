@@ -1,13 +1,11 @@
 from functools import partial
-from pathlib import Path
-import tempfile
 import unittest
 
 import numpy as np
 
-from geneticevo import Evolution, EvolutionConfig, GaussianMutation, LearnReport, Scenario, load_agent
-from geneticevo.agents import VectorAgentFactory
-from geneticevo.evaluation import ObjectiveEvaluator, GymEvaluator, adaptation_evaluation, AdaptationTask
+from geneticevo import Evolution, EvolutionConfig, GaussianMutation, LearnReport, Scenario
+from geneticevo.agents import MLPAgentFactory, VectorAgentFactory
+from geneticevo.evaluation import ObjectiveEvaluator, adaptation_evaluation, AdaptationTask
 from geneticevo.environments import Reach1D
 from geneticevo.learners import GenomeLearner
 
@@ -29,6 +27,11 @@ class AddOneLearner(GenomeLearner):
 
 
 class InheritanceTests(unittest.TestCase):
+    def test_neural_lifetime_learning_requires_an_explicit_learner(self):
+        with self.assertRaisesRegex(ValueError, "requires an explicit custom learner"):
+            Evolution(agent_factory=MLPAgentFactory((4,)), env_factory=Reach1D,
+                      config=EvolutionConfig(learning_budget=4))
+
     def experiment(self, mode):
         return Evolution(agent_factory=VectorAgentFactory(2, initial_std=0), env_factory=Reach1D,
                          evaluator=ObjectiveEvaluator(lambda v, s: float(v.sum())),
@@ -71,102 +74,6 @@ class InheritanceTests(unittest.TestCase):
         evaluator = ObjectiveEvaluator(lambda v, s: float(v.sum()))
         records = adaptation_evaluation(agent, TaskLearner(), Reach1D, evaluator, tasks, 4)
         self.assertEqual([r["learning"].metrics["training_horizon"] for r in records], [3, 7])
-
-
-try:
-    import torch
-    from geneticevo.integrations.sb3 import SB3AgentFactory, SB3Learner
-    HAS_SB3 = True
-except ImportError:
-    HAS_SB3 = False
-
-
-@unittest.skipUnless(HAS_SB3, "SB3 extra is not installed")
-class SB3Tests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        torch.set_num_threads(1)
-
-    def agent(self, algorithm="PPO", copies=1):
-        env = Reach1D(horizon=4)
-        options = {"n_steps": 8, "batch_size": 8, "n_epochs": 1, "policy_kwargs": {"net_arch": [8]}} if algorithm == "PPO" else {
-            "buffer_size": 100, "learning_starts": 0, "batch_size": 4, "policy_kwargs": {"net_arch": [8]}}
-        return SB3AgentFactory(algorithm, options, copies)(np.random.default_rng(1), env.observation_space, env.action_space)
-
-    def test_ppo_budget_frozen_eval_and_save(self):
-        agent = self.agent()
-        learner = SB3Learner()
-        before = agent.genome.vector()
-        report = learner.learn(agent, partial(Reach1D, horizon=4), 9, 1, 2)
-        self.assertEqual(report.interactions, 16)
-        self.assertGreater(report.updates, 0)
-        self.assertFalse(np.array_equal(before, agent.genome.vector()))
-        frozen = agent.genome.vector()
-        GymEvaluator(Reach1D).evaluate(agent, [Scenario(10)])
-        np.testing.assert_array_equal(frozen, agent.genome.vector())
-        with tempfile.TemporaryDirectory() as directory:
-            agent.save(directory)
-            restored = load_agent(directory)
-            np.testing.assert_array_equal(frozen, restored.genome.vector())
-
-    def test_dqn_replay_target_and_child_reset(self):
-        agent = self.agent("DQN")
-        learner = SB3Learner()
-        learner.learn(agent, Reach1D, 8, 3, 4)
-        self.assertGreater(agent.model.replay_buffer.size(), 0)
-        child = learner.clone(agent, False)
-        self.assertEqual(child.model.replay_buffer.size(), 0)
-        self.assertEqual(child.model.num_timesteps, 0)
-        self.assertEqual(child.model._n_updates, 0)
-        self.assertEqual(len(child.model.policy.optimizer.state), 0)
-        GaussianMutation(1, 0.1)(child.genome, np.random.default_rng(3))
-        for online, target in zip(child.model.q_net.parameters(), child.model.q_net_target.parameters()):
-            torch.testing.assert_close(online, target)
-        resumed = learner.clone(agent, True)
-        self.assertEqual(resumed.model.replay_buffer.size(), agent.model.replay_buffer.size())
-
-    def test_multiple_copies_and_resume(self):
-        agent = self.agent(copies=2)
-        learner = SB3Learner(2)
-        self.assertEqual(learner.learn(agent, Reach1D, 5, 1, 2).interactions, 16)
-        clone = learner.clone(agent, True)
-        report1 = learner.learn(agent, Reach1D, 16, 3, 4)
-        report2 = learner.learn(clone, Reach1D, 16, 3, 4)
-        np.testing.assert_array_equal(agent.genome.vector(), clone.genome.vector())
-        self.assertEqual(report1.interactions, report2.interactions)
-
-    def test_reject_spaces_backends_and_normalization(self):
-        env = Reach1D(continuous=True)
-        with self.assertRaises(ValueError):
-            SB3AgentFactory("DQN")(np.random.default_rng(0), env.observation_space, env.action_space)
-        learner = SB3Learner()
-        with self.assertRaises(ValueError):
-            learner.validate(self.agent(), Reach1D, "batched")
-        from gymnasium.wrappers import NormalizeObservation
-        with self.assertRaises(ValueError):
-            learner.validate(self.agent(), lambda: NormalizeObservation(Reach1D()), "serial")
-
-    def test_evolution_sb3_resume_and_continuous_ppo(self):
-        def experiment(generations):
-            return Evolution(env_factory=Reach1D, learner=SB3Learner(),
-                agent_factory=SB3AgentFactory("PPO", {"n_steps": 8, "batch_size": 8, "n_epochs": 1,
-                                                     "policy_kwargs": {"net_arch": [4]}}),
-                config=EvolutionConfig(population_size=2, generations=generations, elite_count=1,
-                                       evaluation_episodes=1, learning_budget=8))
-        complete = experiment(2).run()
-        with tempfile.TemporaryDirectory() as directory:
-            first = experiment(1)
-            first.run()
-            path = Path(directory) / "sb3.checkpoint"
-            first.checkpoint(path)
-            resumed = experiment(2).run(path)
-        for left, right in zip(complete.population, resumed.population):
-            np.testing.assert_array_equal(left.agent.genome.vector(), right.agent.genome.vector())
-        env = Reach1D(continuous=True)
-        agent = SB3AgentFactory("PPO", {"n_steps": 4, "batch_size": 4, "n_epochs": 1,
-            "policy_kwargs": {"net_arch": [4]}})(np.random.default_rng(0), env.observation_space, env.action_space)
-        report = SB3Learner().learn(agent, partial(Reach1D, continuous=True), 4, 0, 1)
-        self.assertEqual(report.interactions, 4)
 
 
 if __name__ == "__main__":

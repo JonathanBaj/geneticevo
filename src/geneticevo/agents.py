@@ -29,25 +29,6 @@ def validate_spaces(observation_space: Any, action_space: Any) -> None:
         raise ValueError("Supported actions: Discrete or finite flat Box")
 
 
-def validate_training_environment(agent, env_factory):
-    from .integrations_validation import reject_normalization
-
-    env = env_factory()
-    try:
-        observation, action = env.observation_space, env.action_space
-        validate_spaces(observation, action)
-        if observation.shape != (agent.observation_dim,):
-            raise ValueError("Training observation space differs")
-        if isinstance(action, spaces.Discrete) != agent.discrete or (
-                action.n if agent.discrete else action.shape[0]) != agent.action_dim:
-            raise ValueError("Training action space differs")
-        if not agent.discrete and not (np.array_equal(action.low, agent.low) and np.array_equal(action.high, agent.high)):
-            raise ValueError("Training action bounds differ")
-        reject_normalization(env)
-    finally:
-        env.close()
-
-
 @dataclass
 class VectorAgent:
     genome: VectorGenome
@@ -163,7 +144,6 @@ class MLPAgent:
         self.next_layer_id = max(self.next_layer_id, max(ids, default=-1) + 1)
         if hasattr(self, 'training_state'):
             self.training_state.pop('adam', None)
-            self.training_state.pop('rust_ppo', None)
         return True
 
     def insert_hidden_layer(self, index, width, rng):
@@ -286,9 +266,8 @@ def load_agent(path: str):
     spec = json.loads((folder / "agent.json").read_text(encoding="utf-8"))
     if spec.get("schema") != 1:
         raise ValueError("Unsupported agent schema")
-    if spec["kind"] == "sb3":
-        from .integrations.sb3 import SB3Agent
-        return SB3Agent.load(folder)
+    if spec["kind"] not in ("mlp", "vector", "graph", "communicating"):
+        raise ValueError(f"Unsupported agent kind {spec['kind']!r}")
     if spec["kind"] == "communicating":
         from .shared import CommunicatingAgent
         with np.load(folder / "genome.npz", allow_pickle=False) as data:
@@ -304,8 +283,6 @@ def load_agent(path: str):
             np.array(spec['low'], np.float32), np.array(spec['high'], np.float32),
             tuple(spec['node_ids']), tuple(tuple(edge) for edge in spec['edges']), spec['next_node_id'],
             spec['settling_steps'], GraphGrowth(**spec['growth']) if spec.get('growth') is not None else None)
-    if spec["kind"] != "mlp":
-        raise ValueError("Unknown agent kind")
     return MLPAgent(genome, spec["observation_dim"], tuple(spec["hidden_sizes"]), spec["action_dim"],
                     spec["discrete"], np.array(spec["low"], np.float32), np.array(spec["high"], np.float32),
                     NeuralGrowth(**spec["growth"]) if spec.get("growth") is not None else None,

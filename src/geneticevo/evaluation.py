@@ -82,8 +82,7 @@ def adaptation_evaluation(agent, learner, env_factory, evaluator, tasks, budget,
         training_factory = task.training_env_factory if isinstance(task, AdaptationTask) else env_factory
         copy = learner.clone(agent, training_state=False)
         before = evaluator.evaluate(copy, scenarios, seed_for(seed, "test", index))
-        backend = getattr(learner, "execution_backend", "batched" if hasattr(learner, "learn_population") else "serial")
-        learner.validate(copy, training_factory, backend)
+        learner.validate(copy, training_factory, getattr(learner, "execution_backend", "serial"))
         report = learner.learn(copy, training_factory, budget, seed_for(seed, "training", index),
                                seed_for(seed, "actions", index))
         after = evaluator.evaluate(copy, scenarios, seed_for(seed, "test", index))

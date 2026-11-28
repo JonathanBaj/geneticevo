@@ -1,4 +1,4 @@
-"""Lifetime capacity, genetic inheritance, and optional PPO integration."""
+"""Lifetime capacity, genetic inheritance, and frozen evaluation."""
 from dataclasses import replace
 from functools import partial
 import json
@@ -207,14 +207,13 @@ class GrowthTests(unittest.TestCase):
                       crossover=lambda a, b, rng: a).run()
         class Unsupported(GrowingLearner):
             supports_neural_growth = False
-        with self.assertRaisesRegex(ValueError, 'requires NativePPO'):
+        with self.assertRaisesRegex(ValueError, 'requires a custom learner'):
             Evolution(agent_factory=MLPAgentFactory((3,), NeuralGrowth()), env_factory=Reach1D,
                       learner=Unsupported(), config=EvolutionConfig(learning_budget=1)).run()
 
 
 try:
     import torch
-    from geneticevo.ppo import NativePPO
     from geneticevo.tensor import TensorReach1D, evaluate_batched
     HAS_TORCH = True
 except ImportError:
@@ -222,72 +221,10 @@ except ImportError:
 
 
 @unittest.skipUnless(HAS_TORCH, 'torch extra is not installed')
-class GrowthPPOTests(unittest.TestCase):
+class GrowthInferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         torch.set_num_threads(1)
-
-    def experiment(self, generations, mode='lamarckian', output_dir=None, tensor=True):
-        return Evolution(env_factory=partial(Reach1D, horizon=7),
-            tensor_env_factory=partial(TensorReach1D, horizon=7) if tensor else None,
-            agent_factory=MLPAgentFactory((3, 4), NeuralGrowth(check_every=8,
-                neurons_per_growth=1, max_hidden_size=9, mutation_probability=1, mutation_step=1)),
-            backend='batched', learner=NativePPO(env_copies=2, rollout_steps=4, epochs=1, minibatch_size=4),
-            config=EvolutionConfig(population_size=3, generations=generations, elite_count=1,
-                immigrant_count=1, evaluation_episodes=2, learning_budget=9, env_copies=2,
-                diversity_pairs=5, measure_pre_learning=True, inheritance=mode, output_dir=output_dir))
-
-    def test_ppo_growth_budget_state_and_checkpoint_resume(self):
-        for mode in ('lamarckian', 'baldwinian'):
-            complete = self.experiment(3, mode).run()
-            self.assertEqual(complete.history[0]['learning_actual_per_individual'], [16] * 3)
-            self.assertEqual(complete.history[-1]['training_interactions'], 144)
-            self.assertEqual(complete.history[0]['learner_metrics']['growth_events'], 2)
-            self.assertEqual([sum(s) for s in complete.history[0]['network_hidden_sizes']], [9] * 3)
-            self.assertGreater(len({tuple(s) for s in complete.history[-1]['network_hidden_sizes']}), 1)
-            with tempfile.TemporaryDirectory() as directory:
-                first = self.experiment(1, mode, directory)
-                first.run()
-                resumed = self.experiment(3, mode).run(Path(directory) / 'latest.checkpoint')
-                for left, right in zip(complete.population, resumed.population):
-                    self.assertEqual(left.id, right.id)
-                    self.assertEqual(left.agent.hidden_sizes, right.agent.hidden_sizes)
-                    np.testing.assert_array_equal(left.agent.genome.vector(), right.agent.genome.vector())
-                    if mode == 'lamarckian':
-                        self.assertEqual(left.agent.training_state['neural_growth'],
-                                         right.agent.training_state['neural_growth'])
-                        for name, parameter in left.agent.parameters().items():
-                            self.assertEqual(tuple(left.agent.training_state['adam']['first'][name].shape), parameter.shape)
-                self.assertEqual(complete.lineage, resumed.lineage)
-                self.assertEqual([x['mean'] for x in complete.history], [x['mean'] for x in resumed.history])
-                self.assertEqual([x['network_hidden_sizes'] for x in complete.history],
-                                 [x['network_hidden_sizes'] for x in resumed.history])
-
-    def test_ppo_learns_new_connections_and_keeps_environment_alive(self):
-        for continuous in (False, True):
-            growth = NeuralGrowth(check_every=4, neurons_per_growth=2, max_hidden_size=5, mutation_probability=0)
-            agent = make_agent((3,), growth, continuous)
-            instances = []
-            class CountingEnv(Reach1D):
-                def __init__(self):
-                    super().__init__(horizon=50, continuous=continuous)
-                    self.resets = 0
-                    instances.append(self)
-                def reset(self, **kwargs):
-                    self.resets += 1
-                    return super().reset(**kwargs)
-            learner = NativePPO(rollout_steps=4, epochs=1, minibatch_size=4)
-            report = learner.learn_population([agent], CountingEnv, None, 12, 0, 0)[0]
-            self.assertEqual(agent.hidden_sizes, (5,))
-            self.assertEqual(report.interactions, 12)
-            self.assertEqual(report.updates, 3)
-            self.assertEqual(report.metrics['growth_events'], 1)
-            self.assertEqual(agent.training_state['neural_growth']['interactions'], 12)
-            self.assertEqual(agent.training_state['adam']['step'], 2)
-            self.assertEqual(len(instances), 1)
-            self.assertEqual(instances[0].resets, 1)
-            self.assertGreater(np.linalg.norm(agent.parameters()['actor_w1'][3:]), 0)
-            self.assertGreater(np.linalg.norm(agent.parameters()['critic_w1'][3:]), 0)
 
     def test_variable_width_evaluation_matches_serial_and_is_frozen(self):
         for continuous in (False, True):
@@ -305,24 +242,6 @@ class GrowthPPOTests(unittest.TestCase):
                     self.assertEqual(evaluation.interactions, 15)
                     self.assertFalse(hasattr(agent, 'training_state'))
 
-    def test_native_ppo_loss_gate_and_python_bridge(self):
-        agent = make_agent((3,), NeuralGrowth(check_every=4, value_loss_threshold=1e20))
-        report = NativePPO(rollout_steps=4, epochs=1, minibatch_size=4).learn(agent, Reach1D, 8, 1, 2)
-        self.assertEqual(agent.hidden_sizes, (3,))
-        self.assertEqual(report.metrics['growth_events'], 0)
-        result = self.experiment(2, tensor=False).run()
-        self.assertEqual(result.history[-1]['training_interactions'], 96)
 
-    @unittest.skipUnless(HAS_TORCH and torch.cuda.is_available(), 'CUDA hardware unavailable')
-    def test_cuda_growth_and_variable_widths(self):
-        agents = [make_agent((width,), NeuralGrowth(check_every=4, max_hidden_size=8)) for width in (3, 5)]
-        reports = NativePPO(rollout_steps=4, epochs=1, minibatch_size=4, device='cuda').learn_population(
-            agents, Reach1D, TensorReach1D, 8, 0, 0)
-        self.assertEqual([r.interactions for r in reports], [8, 8])
-        self.assertTrue(all(r.metrics['growth_events'] > 0 for r in reports))
-        evaluations = evaluate_batched(agents, [Scenario(1)], Reach1D, TensorReach1D, device='cuda')
-        self.assertTrue(all(np.isfinite(x.fitness) for x in evaluations))
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

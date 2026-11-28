@@ -3,12 +3,11 @@
 python benchmarks/baselines.py --seeds 1 2 3
 """
 import argparse
-from functools import partial
 import time
 
 import numpy as np
 
-from geneticevo import Evolution, EvolutionConfig, Scenario
+from geneticevo import Evolution, EvolutionConfig
 from geneticevo.agents import MLPAgentFactory
 from geneticevo.core import scenarios_for
 from geneticevo.environments import Reach1D
@@ -27,28 +26,22 @@ if __name__ == "__main__":
     parser.add_argument("--seeds", nargs="+", type=int, default=[1, 2, 3])
     args = parser.parse_args()
     if len(args.seeds) < 2:
-        parser.error("Use at least two independent training seeds for uncertainty summaries")
-    import torch
-    from geneticevo.integrations.sb3 import SB3AgentFactory, SB3Learner
-    torch.set_num_threads(1)
+        parser.error("Use at least two independent seeds for uncertainty summaries")
     records = []
     final_scenarios = scenarios_for(2026, "test", 8)
     evaluator = GymEvaluator(Reach1D)
     for seed in args.seeds:
-        for mode in ("random", "evolution", "rl_only", "evolution_rl"):
+        for mode in ("random", "evolution"):
             start = time.perf_counter()
             if mode == "random":
                 result = evaluator.evaluate(RandomAgent(), final_scenarios, seed)
                 record = {"mode": mode, "seed": seed, "test_fitness": result.fitness,
                           "training_interactions": 0, "evaluation_interactions": result.interactions}
             else:
-                learning = mode in ("rl_only", "evolution_rl")
-                size = 1 if mode == "rl_only" else 4
                 experiment = Evolution(env_factory=Reach1D,
-                    agent_factory=SB3AgentFactory("PPO", {"policy_kwargs": {"net_arch": [16, 16]}}) if learning else MLPAgentFactory((16, 16)),
-                    learner=SB3Learner() if learning else None,
-                    config=EvolutionConfig(population_size=size, generations=2, elite_count=1, seed=seed,
-                        evaluation_episodes=2, learning_budget=256 if mode == "rl_only" else 64 if learning else 0))
+                    agent_factory=MLPAgentFactory((16, 16)),
+                    config=EvolutionConfig(population_size=4, generations=2, elite_count=1, seed=seed,
+                        evaluation_episodes=2))
                 result = experiment.run()
                 final = result.evaluate(evaluator, final_scenarios, seed)
                 record = {"mode": mode, "seed": seed, "test_fitness": final.fitness,
@@ -69,4 +62,4 @@ if __name__ == "__main__":
                 "wall_seconds": time.perf_counter() - start})
     summaries = {mode: uncertainty_summary([r["test_fitness"] for r in records if r["mode"] == mode]) for mode in {r["mode"] for r in records}}
     write_json("results/benchmarks/baselines.json", {"records": records, "summaries": summaries,
-        "notes": "RL-only and evolution+RL match lifetime-learning interactions; their evaluation budgets differ and are reported. Evolution-only uses no RL interactions. Random and communication ablations are frozen controls. Small smoke runs cannot establish superiority."})
+        "notes": "Random and evolved policies share a final test suite. Evolution also spends interactions on selection and archive evaluation. Communication uses a separate shared task. These small runs are descriptive."})

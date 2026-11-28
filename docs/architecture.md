@@ -5,7 +5,7 @@ data; `agents` supplies NumPy genomes/policies; `environments` supplies a CPU
 reference; `evaluation` handles frozen objectives and episodes; `evolution`
 implements selection and mutation; `execution` provides serial/process routes;
 `runner` orchestrates lifecycle; `results` handles records and atomic checkpoints.
-Optional tensor/PPO, SB3, plotting, and shared-world modules have explicit imports.
+Optional tensor, Rust, plotting, and shared-world modules have explicit imports.
 
 ## Custom environments and scenarios
 
@@ -16,7 +16,7 @@ resources. `Reach1D` is a complete example. Render through your environment's
 `render_mode` configuration; the runner intentionally does not open GUI windows.
 
 Keep termination (MDP terminal state) separate from external truncation. Both end
-evaluation episodes; learning bootstraps only a truncation. Auto-reset wrappers
+frozen evaluation episodes. Auto-reset wrappers
 that replace final observations are unsupported unless an explicit adapter
 restores those observations. Tensor `step` must return final observations before
 `reset_done(mask)`. Inactive tensor lanes must not move, receive rewards, or add
@@ -51,7 +51,7 @@ An agent exposes `genome`, `act(observation, rng, deterministic=True)`,
 implement environmental actions. A factory is called as
 `factory(rng, observation_space, action_space, device)` and must produce an
 independent agent. All mutable genetic and non-genetic state must be copied;
-fresh children must discard optimizers, replay, counters, and normalization.
+fresh children discard per-agent learner state.
 
 Mutation hooks have signature `(genome, rng) -> metadata_dict` and modify the
 provided child genome. Selection hooks have signature
@@ -74,31 +74,6 @@ the extra tanh and changed adjacency can change outputs. Removing neurons crops
 their connections. Shapes change atomically;
 incompatible Adam state is discarded, while growth counters are retained.
 
-Native PPO checks growth at completed rollout/update boundaries without resetting
-environments. The default path trains growing agents individually and rebuilds
-policy/optimizer tensors at growth. Fixed-size agents use architecture groups.
-The opt-in accelerated path groups by spaces. Width-only configurations retain
-the original masked implementation. Dynamic configurations and mixed-depth
-groups allocate bounded hidden slots plus a separate output head. Each member
-selects the hidden activation at its own depth (or the observation at depth zero)
-for the readout; inactive slots have zero gradients. Dynamic edit boundaries export
-learned weights/moments before editing CPU genes, clear and import only changed
-members, and reset only their Adam moments/step counters. Peer state and parameter
-objects remain in place. Portable
-exports crop parameters and moments to active shapes; generation checkpoints
-retain the existing CPU schema.
-
-Accelerated action, shuffle, environment, and growth streams use separate seeds
-derived from generation and individual identity. The runner passes numeric
-individual IDs; direct learn_population calls can pass member_ids explicitly.
-TensorReach1D and GymTensorBridge implement set_member_seeds(seeds) so chunking
-and regrouping preserve each individual's environment stream as well. Custom
-tensor environments need this method for accelerated training and may implement
-prepare_rollout(steps) to batch reset randomness. Fixed rollout shapes and work
-schedules are required for reproducibility; CPU/CUDA bitwise equivalence is not
-promised. Evaluation preserves original population order and can also be chunked.
-All chunks complete before selection. See [accelerated PPO](accelerated_ppo.md).
-
 Acquired widths, depths, and layer identities are inherited in both modes.
 Baldwinian inheritance keeps birth genes on surviving layers and initializes
 new capacity without copying learned weights. Fresh offspring mutate widths and
@@ -106,45 +81,24 @@ optionally depth before scalar parameter mutation. Architecture mutations appear
 in lineage; generation metrics include widths/counts and learner `hidden_layers`.
 Agent save files include growth configuration, layer IDs and the next ID without
 changing schema 1. Legacy files/checkpoints receive sequential layer IDs. Checkpoints
-retain architecture and per-individual counters/RNG state. Custom crossover is
+retain architecture and per-individual learner state. Custom crossover is
 currently rejected for growth-enabled agents. No network or optimizer state is
 shared between individuals.
 
-## Rust CPU execution
+## Frozen population evaluation
 
-`RustNativePPO` is the default learner for a positive learning budget on built-in
-CPU MLP and graph factories with a Gymnasium environment. The default evaluation
-backend for this learner is `"rust"`, which batches frozen policy calls. Explicit
-evaluation backends and custom evaluators can pair with the same Rust learner.
-The optional PyO3 extension ships in a separate `geneticevo-core` wheel.
-The Python package owns the environment instances, inheritance, mutation,
-selection, lineage, metrics, archives, and generation-boundary checkpoints.
+The Torch backend groups compatible neural architectures and batches independent
+policies on CPU or CUDA. A tensor environment can run on the same device as the
+policies. Gymnasium environments use the CPU bridge. Both routes preserve the
+population order even when architectures have different widths or depths.
 
-Rust holds each policy's active float32 weights, rollout, Adam moments and
-step, and separate ChaCha streams for action sampling and minibatch shuffling.
-Dense layers use contiguous row-major buffers and matrix multiplication for
-larger products. Sparse graphs propagate gradients through the configured
-settling steps, including recurrent edges. Rayon distributes independent
-members while PyO3 releases the GIL. Mixed widths, depths, and graph structures
-share a population without padding. Population chunks can bound memory use.
+The optional Rust CPU backend passes each compatible group of dense and graph
+agents to the PyO3 extension. Each member has its own active float32 gene vector.
+Rayon distributes inference after observations have been copied to Rust-owned
+storage and the GIL is released. Gymnasium environments, selection, mutations,
+lineage, archives, and checkpointing stay in Python.
 
-Each Gymnasium step crosses the boundary with one contiguous observation
-batch, one action batch, and one batch of transition outcomes. Rust takes an
-owned observation snapshot before releasing the GIL. It batches critic inference
-across each rollout and uses the pre-reset observation for truncation
-bootstrapping. PPO updates run over the Rust-owned trajectory. Python calls
-the same growth rules used by native tensor PPO and transfers genes when an
-actual edit needs them. Rust activates the new topology and resets only that
-member's Adam state. Live environments, random streams, and Python growth
-counters continue across edits.
-
-At the generation boundary, the Python agent receives its trained genes,
-optimizer moments and step, and random-stream positions. Checkpoints store
-these alongside the existing growth counters and stable topology identities.
-The live environments and completed rollouts are discarded. Portable champion
-folders contain the usual NumPy-compatible agent data. CPU Torch tensor
-environments, CUDA policies, SB3, and shared-world execution use their existing
-backends.
+Archives use the same serial CPU reference evaluator across all backends.
 
 ## Sparse graph topology
 
@@ -159,9 +113,8 @@ log standard deviations. A shared graph supplies actor and critic outputs.
 Forward evaluation starts with zero activations on every observation and injects
 the observation at each synchronous settling step. Sparse edge gather and
 scatter-add implement weighted messages; hidden neurons use tanh, readouts stay
-linear. The fixed settling budget makes cycles finite and enables ordinary PPO
-autograd through the unrolled computation without episode memory/replay state.
-NumPy inference and tensor inference implement the same computation.
+linear. The fixed settling budget makes cycles finite. NumPy, Torch, and Rust
+implement the same computation.
 
 `GraphGrowth` independently proposes adding/removing nodes and edges at learning
 boundaries, within configured bounds. All action/value neurons are permanent.
@@ -170,10 +123,6 @@ by IDs, so removing a middle neuron never shifts another neuron's genes. IDs
 are allocated monotonically within a lineage. Edge additions are sampled without
 constructing a dense adjacency matrix. Edits may immediately change behavior;
 any structural change clears Adam state even when parameter counts stay equal.
-The default PPO path rebuilds that individual's sparse tensors after exporting
-learned genes, without resetting its environment. Accelerated masked MLP PPO is
-rejected for graph agents; ordinary tensor execution supports CPU/CUDA.
-
 Reproduction clones the acquired topology before structural and scalar weight
 mutation. Baldwinian learning copies acquired topology back to the birth agent,
 retaining its surviving birth genes and initializing only new genes. New children
@@ -196,8 +145,7 @@ guarantee constraint satisfaction or deployment safety.
 
 Learners implement the `Learner` protocol in `core.py`; `GenomeLearner` supplies
 copy/export/state helpers. See the executable `examples/custom_learner.py` for a
-bounded random-search adapter, demonstrating that the interface is not tied to
-PPO rollouts. Required behavior:
+bounded random-search adapter. A custom learner implements these responsibilities.
 
 1. Validate algorithm/space/backend compatibility before training.
 2. Prepare per-agent training state; do not keep it on the shared learner object.
@@ -207,20 +155,9 @@ PPO rollouts. Required behavior:
    unchanged individual.
 5. Save/restore all training state needed for boundary resume.
 
-Runner dispatches population learning to `learn_population` only when a learner
-implements it. Native PPO requires common rollout/minibatch schedules. Its
-loss is a sum of per-individual means, preserving independent loss scaling.
-Per-individual norms clip gradients; Adam moments and counters have a population
-dimension. Sampling and shuffling use independent generators. Random filling
-uses a small population loop; computation, simulation, clipping, and updates are
-batched. Rollout collection still uses a Python time loop.
-
-SB3 RNG use is scoped to each individual and the caller's global state is
-restored. SB3 state serialization includes policy/optimizer, counters, replay
-when applicable, targets, exploration schedule, and per-agent action RNG state.
-PPO buffers are discarded at completed-rollout boundaries. Learning environments
-are closed, reset, and reconstructed at boundaries rather than serialized.
-Normalization wrappers are explicitly rejected.
+The runner calls `learn` for each eligible individual before frozen evaluation.
+Use the environment factory to open and close isolated environments. Report
+actual interactions and updates through `LearnReport`.
 
 ## Shared interaction
 
@@ -233,17 +170,14 @@ rewards; evaluator `reward_mode` determines individual or mean-team selection.
 
 `CommunicatingAgentFactory` evolves an extra deterministic tanh message head.
 Messages depend only on the policy's permitted observation (including earlier
-inboxes). Fixed-rule task learners on `SharedFocalEnv` optimize only task action
-likelihood. Joint stochastic task/message training is deferred, rather than
-treated as ordinary SB3 PPO.
+inboxes). `SharedFocalEnv` presents a single focal policy against a fixed
+partner pool through a Gymnasium environment. Its supplied message rule sets
+the outgoing message.
 
 ## Official integration references
 
 Implementation was checked against the official
 [Gymnasium time-limit guidance](https://gymnasium.farama.org/tutorials/gymnasium_basics/handling_time_limits/),
 [PyTorch population/model vectorization tutorial](https://docs.pytorch.org/tutorials/intermediate/ensembling.html),
-[SB3 PPO API](https://stable-baselines3.readthedocs.io/en/master/modules/ppo.html),
-[SB3 DQN source/API](https://stable-baselines3.readthedocs.io/en/master/_modules/stable_baselines3/dqn/dqn.html),
 and [PettingZoo Parallel API](https://pettingzoo.farama.org/api/parallel/).
-Local installed SB3 source was also exercised by the integration tests.
 
